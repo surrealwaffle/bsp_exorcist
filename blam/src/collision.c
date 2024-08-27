@@ -152,9 +152,9 @@ bool blam_collision_surface_test3d(
 // EXPOSED API
 
 blam_index_long blam_collision_bsp_search(
-    const struct blam_collision_bsp *const bsp,
-    blam_index_long                        node_index,
-    const blam_real3d *const               point)
+  const struct blam_collision_bsp *const bsp,
+  blam_index_long                        root,
+  const blam_real3d *const               point)
 {
     typedef struct blam_bsp3d_node node_type;
     typedef struct blam_plane3d    plane_type;
@@ -162,24 +162,25 @@ blam_index_long blam_collision_bsp_search(
     const node_type  *const nodes  = BLAM_TAG_BLOCK_BASE(bsp, nodes,  bsp3d_nodes);
     const plane_type *const planes = BLAM_TAG_BLOCK_BASE(bsp, planes, planes);
     
-    // if node < 0, it is a leaf index (or -1 if outside of the bsp)
-    while (node_index >= 0) {
-        const node_type *const node = &nodes[node_index];
-        const int fwd = blam_plane3d_test(planes + node->plane, point) >= 0.0f;
-        node_index = node->children[fwd];
+    // if root < 0, it is a leaf index (or -1 if outside of the bsp)
+    while (root >= 0) {
+      const node_type *const node = &nodes[root];
+      const int fwd = blam_plane3d_test(planes + node->plane, point) >= 0.0f;
+      root = node->children[fwd];
     }
     
-    return blam_sanitize_long_s(node_index);
+    const blam_index_long leaf_index = blam_sanitize_long_s(root);
+    return leaf_index;
 }
 
 blam_bool blam_collision_bsp_test_vector(
-    const struct blam_collision_bsp *const bsp,
-    const struct blam_bit_vector           breakable_surfaces,
-    const blam_real3d *const               origin,
-    const blam_real3d *const               delta,
-    blam_real                              max_scale,
-    const blam_flags_long                  flags, // enum blam_collision_test_flags
-    struct blam_collision_bsp_test_vector_result *const data)
+  const struct blam_collision_bsp *const bsp,
+  const struct blam_bit_vector           breakable_surfaces,
+  const blam_real3d *const               origin,
+  const blam_real3d *const               delta,
+  blam_real                              max_scale,
+  const blam_flags_long                  flags, // enum blam_collision_test_flags
+  struct blam_collision_bsp_test_vector_result *const data)
 {
   assert(bsp);
   assert(data);
@@ -419,9 +420,9 @@ bool blam_collision_surface_test3d(
     const struct blam_collision_edge *const edge = &edges[next_edge_index];
     const blam_index_long vertex_index           = blam_collision_edge_inorder_vertex_next(edge, surface_index);
     
-    const blam_real3d vertex = blam_real3d_sub(&vertices[vertex_index].point, origin);
+    const blam_real3d vertex     = blam_real3d_sub(&vertices[vertex_index].point, origin);
     const blam_real3d edge_bivec = blam_real3d_cross(&last_vertex, &vertex);
-    const blam_real volume = blam_real3d_dot(delta, &edge_bivec);
+    const blam_real   volume     = blam_real3d_dot(delta, &edge_bivec);
     
     all_signed   &= volume <= 0;
     all_unsigned &= volume >= 0;
