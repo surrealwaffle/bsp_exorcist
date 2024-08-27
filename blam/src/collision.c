@@ -280,18 +280,14 @@ blam_index_long blam_collision_bsp_search_leaf(
     // holes into the surface (differs from BSP holes as described above). These 
     // holes occur where phantom BSP is present over other surfaces, because the 
     // planes defining the extent of the phantom BSP may split surfaces in other 
-    // leaves.
+    // leaves. The most well-known example of this is a face of the central pillar 
+    // on Wizard.
     //
-    // Possible resolution: Use Plucker coordinates or scalar triple products 
-    //                      to determine relative orientation of a surface's 
-    //                      edges with the ray delta. Scalar triple will be 
-    //                      more performant since Plucker lines require a bit 
-    //                      of precomputation to be effective. This may leave VERY 
-    //                      small holes in the BSP, so a more expensive test can be 
-    //                      employed by continuing intersection along the direction 
-    //                      of delta, without mitigations in place. The orientation
-    //                      of the next surface hit (if any) can be used to decide 
-    //                      if this surface is phantom BSP or not.
+    // Possible resolution: Test surface extents of the projected point.
+    //                      Close holes introduced this way by continuing the
+    //                      intersection test out to infinity. The orientation of 
+    //                      the next surface hit (if any) indicates whether or not
+    //                      the surface should be accepted or rejected.
     if (!splits_interior)
       return surface_index; // Sealed-world rules; surface must be hit.
     else if (blam_collision_surface_test2d(bsp, breakable_surfaces, surface_index, projection_plane, is_forward_plane, &projection))
