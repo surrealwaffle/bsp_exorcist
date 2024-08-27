@@ -84,8 +84,8 @@ blam_bool collision_bsp_test_vector_leaf(
  * \param [in] leaf_index         The index of the leaf.
  * \param [in] plane_index        The index of the intersected plane.
  * \param [in] splits_interior    If \c true, the intersected plane divides two BSP interior leaves.
- * \param [in] origin             The test vector starting point.
- * \param [in] delta              The test vector endpoint, relative to \a origin.
+ * \param [in] origin             The vector starting point.
+ * \param [in] delta              The vector endpoint, relative to \a origin.
  * \param [in] fraction           The distance to the test point, as a fraction of \a delta.
  *
  * \return The index of the intersected surface, or `-1` if no surface was hit.
@@ -125,6 +125,28 @@ blam_bool blam_collision_surface_test2d(
   enum blam_projection_plane       plane,
   blam_bool                        is_forward_plane,
   const blam_real2d               *point);
+
+/**
+ * \brief Tests if a vector intersects a surface, without projection.
+ *
+ * NOTE: THIS FUNCTION IS NOT IN VANILLA HALO.
+ *
+ * \param [in] bsp                The BSP to test against.
+ * \param [in] breakable_surfaces The state of breakable surfaces.
+ * \param [in] surface_index      The index of the surface to test against.
+ * \param [in] origin             The vector starting point.
+ * \param [in] delta              The vector endpoint, relative to \a origin.
+ *
+ * \return `true` if \a point is on the projected surface, otherwise `false`.
+ */
+BLAM_ATTRIBUTE(noinline)
+static
+bool blam_collision_surface_test3d(
+  const struct blam_collision_bsp *bsp,
+  struct blam_bit_vector           breakable_surfaces,
+  blam_index_long                  surface_index,
+  const blam_real3d               *origin,
+  const blam_real3d               *delta);
 
 // -----------------------------------------------------------------------------
 // EXPOSED API
@@ -254,7 +276,10 @@ blam_index_long blam_collision_bsp_search_leaf(
     // surface, then excess area is attributed to the surface.
     //
     // If we force splits_interior to true, artifacts are introduced that punch
-    // holes into the surface (differs from BSP holes as described above).
+    // holes into the surface (differs from BSP holes as described above). These 
+    // holes occur where phantom BSP is present over other surfaces, because the 
+    // planes defining the extent of the phantom BSP also split surfaces in other 
+    // leaves.
     //
     // Possible resolution: Use Plucker coordinates or scalar triple products 
     //                      to determine relative orientation of a surface's 
@@ -327,10 +352,12 @@ blam_bool blam_collision_surface_test2d(
   blam_index_long next_edge = first_edge;
   do {
     const struct blam_collision_edge *const edge = BLAM_TAG_BLOCK_GET(bsp, edge, edges, next_edge);
-    int fwd = edge->surfaces[1] == surface_index;
     
-    const struct blam_collision_vertex *const start = BLAM_TAG_BLOCK_GET(bsp, start, vertices, edge->vertices[fwd]);
-    const struct blam_collision_vertex *const end   = BLAM_TAG_BLOCK_GET(bsp, end, vertices, edge->vertices[!fwd]);
+    const blam_index_long start_index = blam_collision_edge_inorder_vertex(edge, surface_index);
+    const blam_index_long end_index   = blam_collision_edge_inorder_vertex_next(edge, surface_index);
+    
+    const struct blam_collision_vertex *const start = BLAM_TAG_BLOCK_GET(bsp, start, vertices, end_index);
+    const struct blam_collision_vertex *const end   = BLAM_TAG_BLOCK_GET(bsp, end, vertices, end_index);
     
     const blam_real2d p0 = {
         start->point.components[projection.first], 
@@ -351,10 +378,59 @@ blam_bool blam_collision_surface_test2d(
     if (determinant > 0.0f)
         return false; // point is outside of surface
     
-    next_edge = edge->edges[fwd];
+    next_edge = blam_collision_edge_inorder_edge(edge, surface_index);
   } while (next_edge != first_edge);
   
   return true;
+}
+
+bool blam_collision_surface_test3d(
+  const struct blam_collision_bsp *bsp,
+  struct blam_bit_vector           breakable_surfaces,
+  blam_index_long                  surface_index,
+  const blam_real3d               *origin,
+  const blam_real3d               *delta)
+{
+  assert(origin);
+  assert(delta);
+  
+  const struct blam_collision_surface *const surface  = BLAM_TAG_BLOCK_GET(bsp, surface, surfaces, surface_index);
+  const struct blam_collision_vertex* const  vertices = BLAM_TAG_BLOCK_BASE(bsp, vertices, vertices);
+  const struct blam_collision_edge* const    edges    = BLAM_TAG_BLOCK_BASE(bsp, edges, edges);
+  
+  if ((surface->flags & 0x08) != 0 // breakable flag
+    && surface->breakable_surface < breakable_surfaces.count
+    && !blam_bit_vector_test(&breakable_surfaces, surface->breakable_surface))
+      return false; // Surface is breakable and broken; surface was not hit.
+  
+  const blam_index_long first_edge_index             = surface->first_edge;
+  const struct blam_collision_edge* const first_edge = &edges[first_edge_index];
+  
+  const blam_index_long first_vertex_index = blam_collision_edge_inorder_vertex(first_edge, surface_index);
+  
+  blam_real3d last_vertex = vertices[first_vertex_index].point;
+  last_vertex = blam_real3d_sub(&last_vertex, origin);
+  
+  bool all_signed = true;   // all triple scalar products signed
+  bool all_unsigned = true; // all triple scalar products unsigned
+  blam_index_long next_edge_index = first_edge_index;
+  do
+  {
+    const struct blam_collision_edge *const edge = &edges[next_edge_index];
+    const blam_index_long vertex_index           = blam_collision_edge_inorder_vertex_next(edge, surface_index);
+    
+    const blam_real3d vertex = blam_real3d_sub(&vertices[vertex_index].point, origin);
+    const blam_real3d edge_bivec = blam_real3d_cross(&last_vertex, &vertex);
+    const blam_real volume = blam_real3d_dot(delta, &edge_bivec);
+    
+    all_signed   &= volume <= 0;
+    all_unsigned &= volume >= 0;
+    
+    next_edge_index = blam_collision_edge_inorder_edge(edge, surface_index);
+    last_vertex     = vertex;
+  } while (next_edge_index != first_edge_index);
+  
+  return all_signed || all_unsigned;
 }
 
 blam_bool collision_bsp_test_vector_node(

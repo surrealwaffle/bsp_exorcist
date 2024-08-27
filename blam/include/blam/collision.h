@@ -254,4 +254,52 @@ bool blam_bsp_leaf_type_interior(const enum blam_bsp_leaf_type type)
   return type == k_bsp_leaf_type_interior || type == k_bsp_leaf_type_double_sided;
 }
 
+/**
+ * \brief Gets the first in-order vertex on \a edge through a surface.
+ *
+ * \param [in] edge          The edge.
+ * \param [in] surface_index The index of the surface.
+ *
+ * \return The index of the first vertex along \a edge about the surface.
+ */
+static inline
+blam_index_long blam_collision_edge_inorder_vertex(
+  const struct blam_collision_edge *edge,
+  const blam_index_long surface_index)
+{
+  return edge->vertices[edge->surfaces[1] == surface_index];
+}
+
+/**
+ * \brief Gets the next in-order vertex on \a edge through a surface.
+ *
+ * \param [in] edge          The edge.
+ * \param [in] surface_index The index of the surface.
+ *
+ * \return The index of the next vertex along \a edge about the surface.
+ */
+static inline
+blam_index_long blam_collision_edge_inorder_vertex_next(
+  const struct blam_collision_edge *edge,
+  const blam_index_long surface_index)
+{
+  return edge->vertices[!(edge->surfaces[1] == surface_index)];
+}
+
+/**
+ * \brief Gets the next in-order edge after \a edge about a surface.
+ *
+ * \param [in] edge          The edge.
+ * \param [in] surface_index The index of the surface.
+ *
+ * \return The index of the next edge after \a edge about the surface.
+ */
+static inline
+blam_index_long blam_collision_edge_inorder_edge(
+  const struct blam_collision_edge *edge,
+  const blam_index_long surface_index)
+{
+  return edge->edges[edge->surfaces[1] == surface_index];
+}
+
 #endif // BLAM_COLLISION_BSP_H
