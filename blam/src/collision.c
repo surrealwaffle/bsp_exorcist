@@ -279,7 +279,7 @@ blam_index_long blam_collision_bsp_search_leaf(
     // If we force splits_interior to true, artifacts are introduced that punch
     // holes into the surface (differs from BSP holes as described above). These 
     // holes occur where phantom BSP is present over other surfaces, because the 
-    // planes defining the extent of the phantom BSP also split surfaces in other 
+    // planes defining the extent of the phantom BSP may split surfaces in other 
     // leaves.
     //
     // Possible resolution: Use Plucker coordinates or scalar triple products 
@@ -296,6 +296,8 @@ blam_index_long blam_collision_bsp_search_leaf(
       return surface_index; // Sealed-world rules; surface must be hit.
     else if (blam_collision_surface_test2d(bsp, breakable_surfaces, surface_index, projection_plane, is_forward_plane, &projection))
       return surface_index; // Surface was hit in a 2D projection test.
+    // else if (blam_collision_surface_test3d(bsp, breakable_surfaces, surface_index, origin, delta))
+    //  return surface_index; // Did not meaningfully mitigate phantom BSP over the 2D test.
     else
       ; // CONTINUE; NOTHING HIT
   }
