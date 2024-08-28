@@ -12,7 +12,8 @@ well under the assumption that phantom BSP and BSP holes are rare.
 `tool.exe` may compile incorrect BSPs (both for map and collision models), 
 especially when nearly coplanar surface warnings are emitted. This behaviour 
 produces both BSP leaks as well as phantom BSP. It must be stressed that Halo's BSP 
-traversal subroutines are implemented correctly.
+traversal subroutines are implemented correctly. The root cause of phantom BSP are 
+incorrect splitting planes.
 
 The leaves of a 3D BSP tree form disjoint, convex volumes defined by splitting 
 planes of each leaf. The splitting planes either divide the leaf from other leaves 
