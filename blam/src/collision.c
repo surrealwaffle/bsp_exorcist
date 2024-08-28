@@ -370,12 +370,6 @@ blam_index_long blam_collision_bsp_search_leaf(
     // planes defining the extent of the phantom BSP may split surfaces in other 
     // leaves. The most well-known example of this is a face of the central pillar 
     // on Wizard.
-    //
-    // Possible resolution: Test surface extents of the projected point.
-    //                      Close holes introduced this way by continuing the
-    //                      intersection test out to infinity. The orientation of 
-    //                      the next surface hit (if any) indicates whether or not
-    //                      the surface should be accepted or rejected.
     if (!splits_interior && !mitigate_phantom_bsp)
       return surface_index; // Sealed-world rules; surface must be hit.
     else if (blam_collision_surface_test2d(bsp, breakable_surfaces, surface_index, projection_plane, is_forward_plane, &projection))
