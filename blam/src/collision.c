@@ -93,8 +93,9 @@ blam_bool collision_bsp_test_vector_leaf(
  * \param [in] delta              The vector endpoint, relative to \a origin.
  * \param [in] fraction           The distance to the test point, as a fraction of 
  *                                \a delta.
- * \param [in] expect_frontfacing If \c true, the surface expected to be intersected 
- *                                in this leaf is front-facing.
+ * \param [in] expect_closed      If \c true and an intersection occurs in this 
+ *                                leaf, the surface intersected after this leaf 
+ *                                is expected to be back-facing.
  *
  * \return The index of the intersected surface, or `-1` if no surface was hit.
  */
@@ -110,8 +111,7 @@ blam_index_long blam_collision_bsp_search_leaf(
   blam_real               fraction,
   
   // NON-VANILLA PARAMETERS
-  bool expect_frontfacing
-  );
+  bool expect_closed);
 
 /**
  * \brief Tests if \a point is on a surface projected onto a cardinal plane.
@@ -225,14 +225,54 @@ blam_bool blam_collision_bsp_test_vector(
 // -----------------------------------------------------------------------------
 // INTERNAL FUNCTIONS
 
+/**
+ * \brief Checks if a surface is breakable and broken.
+ *
+ * \param [in] bsp                The collision BSP.
+ * \param [in] breakable_surfaces The state of breakable surfaces.
+ * \param [in] surface_index      The index of the surface to test.
+ *
+ * \return \c true if the surface is broken, otherwise \c false.
+ */
+BLAM_ATTRIBUTE(pure)
+static
+bool collision_surface_broken(
+  const struct blam_collision_bsp *bsp,
+  const struct blam_bit_vector     breakable_surfaces,
+  const blam_index_long            surface_index)
+{
+  const struct blam_collision_surface *const surface = BLAM_TAG_BLOCK_GET(bsp, surface, surfaces, surface_index);
+  
+  if ((surface->flags & 0x08) != 0 // breakable flag
+    && surface->breakable_surface < breakable_surfaces.count
+    && !blam_bit_vector_test(&breakable_surfaces, surface->breakable_surface))
+      return true; // Surface is breakable and broken.
+  
+  return false;
+}
+
+/**
+ * \brief Verifies a surface in the BSP on a given plane by testing the orientation
+ *        of the next intersected surface.
+ *
+ * \param [in] bsp         The collision BSP to test again.
+ * \param [in] plane_index The index of the plane of the surface to verify.
+ * \param [in] origin      The vector starting point.
+ * \param [in] delta       The vector endpoint, relative to \a origin.
+ * \param [in] fraction    The distance to the test point, as a fraction of \a delta.
+ * \param [in] expect_closed If \c true, the next intersected surface is to be 
+ *                           backfacing, or frontfacing if supplied as \c false.
+ *
+ * \return \c false if the surface was rejected as phantom BSP, otherwise \c true.
+ */
 static
 bool collision_surface_verify_bsp(
   const struct blam_collision_bsp *bsp,
-  blam_index_long plane_index,
-  const blam_real3d *origin,
-  const blam_real3d *delta,
-  blam_real fraction,
-  bool surface_is_frontfacing)
+  const blam_index_long            plane_index,
+  const blam_real3d               *origin,
+  const blam_real3d               *delta,
+  const blam_real                  fraction,
+  const bool                       expect_closed)
 {
   const int next_surface_direction = blamext_collision_bsp_test_vector_next_surface_orientation(
     bsp,
@@ -241,16 +281,16 @@ bool collision_surface_verify_bsp(
     fraction,
     plane_index);
   
-  if (surface_is_frontfacing)
+  if (expect_closed)
   {
-    // next surface should be back-facing
+    // next surface (if any) is expected to be backfacing
     if (next_surface_direction < 0)
-      return false; // next surface was front-facing
+      return false; // next surface was frontfacing
   } else
   {
-    // next surface should be front-facing
+    // next surface (if any) is expected to be frontfacing
     if (next_surface_direction > 0)
-      return false; // next surface was back-facing
+      return false;
   }
   
   return true;
@@ -340,8 +380,12 @@ blam_index_long blam_collision_bsp_search_leaf(
       return surface_index; // Surface was hit in a 2D projection test.
     //else if (blam_collision_surface_test3d(bsp, breakable_surfaces, surface_index, origin, delta))
     //  return surface_index; // Did not meaningfully mitigate phantom BSP over the 2D test.
+    else if (splits_interior)
+      ; // CONTINUE; VANILLA BEHAVIOUR REQUIRED IN THIS CASE
+    else if (collision_surface_broken(bsp, breakable_surfaces, surface_index))
+      ; // CONTINUE; SURFACE IS BROKEN
     else if (collision_surface_verify_bsp(bsp, plane_index, origin, delta, fraction, expect_frontfacing))
-      return surface_index;
+      return surface_index; // COULD NOT REJECT SURFACE AS PHANTOM BSP
     else
       ; // CONTINUE; NOTHING HIT
   }
@@ -381,13 +425,10 @@ blam_bool blam_collision_surface_test2d(
   assert(point);
   assert(bsp);
   
+  if (collision_surface_broken(bsp, breakable_surfaces, surface_index))
+    return false; // Surface is broken; cannot hit
+  
   struct blam_collision_surface *const surface = BLAM_TAG_BLOCK_GET(bsp, surface, surfaces, surface_index);
-  
-  if ((surface->flags & 0x08) != 0 // breakable flag
-    && surface->breakable_surface < breakable_surfaces.count
-    && !blam_bit_vector_test(&breakable_surfaces, surface->breakable_surface))
-      return false; // Surface is breakable and broken; surface was not hit.
-  
   const blam_index_long first_edge = surface->first_edge;
   
   const blam_pair_int projection = blam_projection_plane_indices(plane, is_forward_plane);
@@ -560,8 +601,9 @@ blam_bool collision_bsp_test_vector_node(
  *                                leaf, as a fraction of `ctx->delta`.
  * \param [in] splits_interior    If \c true, the `ctx->plane` divides two BSP 
  *                                interior leaves.
- * \param [in] expect_frontfacing If \c true, the surface expected to be intersected 
- *                                in this leaf is front-facing.
+ * \param [in] expect_closed      If \c true and an intersection occurs in this 
+ *                                leaf, the surface intersected after this leaf 
+ *                                is expected to be back-facing.
  *
  * \return \c true if a surface was intersected, otherwise \c false.
  */
@@ -573,8 +615,7 @@ bool blam_collision_bsp_test_vector_leaf_visit_surface(
   const bool            splits_interior,
   
   // NON-VANILLA PARAMETERS
-  bool expect_frontfacing
-  )
+  bool expect_closed)
 {
   if (leaf_index == -1)
       return false;
@@ -588,7 +629,7 @@ bool blam_collision_bsp_test_vector_leaf_visit_surface(
     ctx->origin,
     ctx->delta,
     fraction,
-    expect_frontfacing);
+    expect_closed);
   
   if (surface_index == -1)
     return false;
@@ -626,16 +667,16 @@ blam_bool collision_bsp_test_vector_leaf(
   {
     // Testing front-facing surfaces
     // Plane splits BSP interior at ctx->leaf from BSP exterior at leaf.
-    const blam_index_long tested_leaf        = ctx->leaf;
-    const bool            splits_interior    = false;
-    const bool            expect_frontfacing = true;
+    const blam_index_long tested_leaf     = ctx->leaf;
+    const bool            splits_interior = false;
+    const bool            expect_closed   = true; // surface after is backfacing
     
     const bool result = blam_collision_bsp_test_vector_leaf_visit_surface(
       ctx, 
       tested_leaf, 
       fraction, 
       splits_interior, 
-      expect_frontfacing);
+      expect_closed);
     if (BLAM_LIKELY(result))
       return true;
   } else if ((ctx->flags & k_collision_test_back_facing_surfaces) != 0
@@ -644,16 +685,16 @@ blam_bool collision_bsp_test_vector_leaf(
   {
     // Testing back-facing surfaces
     // Plane splits BSP exterior at ctx->leaf from BSP interior at leaf.
-    const blam_index_long tested_leaf = leaf;
-    const bool            splits_interior    = false;
-    const bool            expect_frontfacing = false;
+    const blam_index_long tested_leaf     = leaf;
+    const bool            splits_interior = false;
+    const bool            expect_closed   = false; // surface after is frontfacing
     
     const bool result = blam_collision_bsp_test_vector_leaf_visit_surface(
       ctx, 
       tested_leaf, 
       fraction, 
       splits_interior, 
-      expect_frontfacing);
+      expect_closed);
     if (BLAM_LIKELY(result))
       return true;
   } else if ((ctx->flags & k_collision_test_ignore_two_sided_surfaces) == 0
@@ -665,15 +706,15 @@ blam_bool collision_bsp_test_vector_leaf(
     const blam_index_long tested_leaf
       = (ctx->flags & k_collision_test_front_facing_surfaces) != 0 ? ctx->leaf
                                                                    : leaf;
-    const bool splits_interior    = true;
-    const bool expect_frontfacing = true;
+    const bool splits_interior = true;
+    const bool expect_closed   = false; // surface after is frontfacing
 
     const bool result = blam_collision_bsp_test_vector_leaf_visit_surface(
       ctx, 
       tested_leaf, 
       fraction, 
       splits_interior, 
-      expect_frontfacing);
+      expect_closed);
     if (result)
       return true;
     // NOTE: Not a sealed-world violation; double-sided surface may be breakable.
