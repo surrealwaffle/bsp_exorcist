@@ -4,6 +4,7 @@ add_library(blam
     STATIC
         src/base.c
         src/collision.c
+        src/collision_bsp_ext.c
         src/math.c)
 target_include_directories(blam
     PUBLIC 
