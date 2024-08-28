@@ -21,7 +21,7 @@ struct test_vector_context
   // Immediate History Values
   blam_index_long         leaf;      ///< The index of the previous leaf visited.
   enum blam_bsp_leaf_type leaf_type; ///< The category of the previous leaf visited.
-  blam_index_long plane;             ///< The index of the last plane crossed.
+  blam_index_long         plane;     ///< The index of the last plane crossed.
 };
 
 static
