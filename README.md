@@ -44,8 +44,9 @@ pillar on Wizard, as shown below.
 The red arrow into the face indicates where the vector intersects with the surface.
 The red outline indicates the surface intersected. The lime-green line indicates 
 where the top and bottom surfaces are split along the face. As shown, excess 
-geometry is attributed to the bottom surface, and eliminating this geometry would 
-introduce a hole into the BSP.
+geometry is attributed to the bottom surface. Eliminating that excess geometry 
+would introduce a hole into the BSP, because the surface that should be intersected 
+is never tested in the first place.
 
 ## TODOs
  * MSVC build support
