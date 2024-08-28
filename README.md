@@ -35,8 +35,8 @@ If we then perform a Surface3D-vector intersection test to verify that a surface
 indeed intersected, holes are then punched into the BSP (different from BSP leaks) 
 even in infinite precision, because the dividing planes are incorrect and may cut 
 into valid surface in another leaf. This is why con's [ghostbuster](https://opencarnage.net/index.php?/topic/8069-ghostbuster-a-phantom-bsp-tag-fixer-deprecated/)
-tool produces holes. The most obvious example of is a face of the central pillar on 
-Wizard, as shown below.
+tool produces holes. The most obvious example of this is a face of the central 
+pillar on Wizard, as shown below.
 
 ![wizard_phantom_bsp](/wizard_phantom_bsp.png)
 
