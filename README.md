@@ -16,8 +16,8 @@ traversal subroutines are implemented correctly. The root cause of phantom BSP i
 incorrect splitting planes.
 
 The leaves of a 3D BSP tree form disjoint, convex volumes defined by splitting 
-planes of each leaf. The splitting planes either divide the leaf from other leaves 
-or interior volume (within the BSP) from exterior volume (outside the BSP). The 
+planes of each leaf. The splitting planes either divide the leaf from other leaves, 
+OR interior volume (within the BSP) from exterior volume (outside the BSP). The 
 planes which divide interior from exterior have associated surface data. In the 
 presence of double-sided surfaces, planes which divide two interior volumes may also
 have surface data.
