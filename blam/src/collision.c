@@ -355,7 +355,7 @@ blam_bool blam_collision_surface_test2d(
     const blam_index_long start_index = blam_collision_edge_inorder_vertex(edge, surface_index);
     const blam_index_long end_index   = blam_collision_edge_inorder_vertex_next(edge, surface_index);
     
-    const struct blam_collision_vertex *const start = BLAM_TAG_BLOCK_GET(bsp, start, vertices, end_index);
+    const struct blam_collision_vertex *const start = BLAM_TAG_BLOCK_GET(bsp, start, vertices, start_index);
     const struct blam_collision_vertex *const end   = BLAM_TAG_BLOCK_GET(bsp, end, vertices, end_index);
     
     const blam_real2d p0 = {
