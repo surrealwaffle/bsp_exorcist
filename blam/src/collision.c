@@ -452,13 +452,13 @@ blam_bool blam_collision_surface_test2d(
     const struct blam_collision_vertex *const end   = BLAM_TAG_BLOCK_GET(bsp, end, vertices, end_index);
     
     const blam_real2d p0 = {
-        start->point.components[projection.first], 
-        start->point.components[projection.second]
+      start->point.components[projection.first], 
+      start->point.components[projection.second]
     };
     
     const blam_real2d p1 = {
-        end->point.components[projection.first], 
-        end->point.components[projection.second]
+      end->point.components[projection.first], 
+      end->point.components[projection.second]
     };
     
     const blam_real2d point_delta = blam_real2d_sub(point, &p0);
