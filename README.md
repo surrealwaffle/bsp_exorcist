@@ -48,7 +48,7 @@ However, if the leaf was not split correctly, then phantom BSP occurs when that
 assumption does not hold, resulting in excess surface area attributed to the located
 surface. This results in the well-known phantom BSP on Danger Canyon.
 
-If we then perform a Surface3D-vector intersection test to verify that a surface was 
+If we then perform a surface-vector intersection test to verify that a surface was 
 indeed intersected, holes are then punched into the BSP (different from BSP leaks) 
 even in infinite precision, because the dividing planes are incorrect and may cut 
 into valid surface in another leaf. This is why con's [ghostbuster](https://opencarnage.net/index.php?/topic/8069-ghostbuster-a-phantom-bsp-tag-fixer-deprecated/)
