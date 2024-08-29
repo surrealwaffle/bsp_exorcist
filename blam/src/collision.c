@@ -99,7 +99,7 @@ blam_bool collision_bsp_test_vector_leaf(
  * \return The index of the intersected surface, or `-1` if no surface was hit.
  */
 static
-blam_index_long blam_collision_bsp_search_leaf(
+blam_index_long collision_bsp_search_leaf(
   const struct blam_collision_bsp *bsp,
   struct blam_bit_vector  breakable_surfaces,
   blam_index_long         leaf_index,
@@ -129,7 +129,7 @@ blam_index_long blam_collision_bsp_search_leaf(
  */
 BLAM_ATTRIBUTE(noinline)
 static
-blam_bool blam_collision_surface_test2d(
+blam_bool collision_surface_test2d(
   const struct blam_collision_bsp *bsp,
   struct blam_bit_vector           breakable_surfaces,
   blam_index_long                  surface_index,
@@ -152,7 +152,7 @@ blam_bool blam_collision_surface_test2d(
  */
 BLAM_ATTRIBUTE(noinline)
 static
-bool blam_collision_surface_test3d(
+bool collision_surface_test3d(
   const struct blam_collision_bsp *bsp,
   struct blam_bit_vector           breakable_surfaces,
   blam_index_long                  surface_index,
@@ -295,7 +295,7 @@ bool collision_surface_verify_bsp(
   return true;
 }
 
-blam_index_long blam_collision_bsp_search_leaf(
+blam_index_long collision_bsp_search_leaf(
   const struct blam_collision_bsp *const bsp,
   const struct blam_bit_vector  breakable_surfaces,
   const blam_index_long         leaf_index,
@@ -369,11 +369,11 @@ blam_index_long blam_collision_bsp_search_leaf(
     // on Wizard.
     if (!splits_interior && !mitigate_phantom_bsp)
       return surface_index; // Sealed-world rules; surface must be hit.
-    else if (blam_collision_surface_test2d(bsp, breakable_surfaces, surface_index, projection_plane, is_forward_plane, &projection))
+    else if (collision_surface_test2d(bsp, breakable_surfaces, surface_index, projection_plane, is_forward_plane, &projection))
       return surface_index; // Surface was hit in a 2D projection test.
     else if (!mitigate_phantom_bsp)
       ; // CONTINUE; MITIGATIONS DISABLED
-    //else if (blam_collision_surface_test3d(bsp, breakable_surfaces, surface_index, origin, delta))
+    //else if (collision_surface_test3d(bsp, breakable_surfaces, surface_index, origin, delta))
     //  return surface_index; // Did not meaningfully mitigate phantom BSP over the 2D test.
     else if (splits_interior)
       ; // CONTINUE; VANILLA BEHAVIOUR REQUIRED IN THIS CASE
@@ -411,7 +411,7 @@ blam_index_long blam_bsp2d_search(
   return surface_index;
 }
 
-blam_bool blam_collision_surface_test2d(
+blam_bool collision_surface_test2d(
   const struct blam_collision_bsp *bsp,
   struct blam_bit_vector           breakable_surfaces,
   blam_index_long                  surface_index,
@@ -469,7 +469,7 @@ blam_bool blam_collision_surface_test2d(
   return true;
 }
 
-bool blam_collision_surface_test3d(
+bool collision_surface_test3d(
   const struct blam_collision_bsp *bsp,
   struct blam_bit_vector           breakable_surfaces,
   blam_index_long                  surface_index,
@@ -605,7 +605,7 @@ blam_bool collision_bsp_test_vector_node(
  * \return \c true if a surface was intersected, otherwise \c false.
  */
 static
-bool blam_collision_bsp_test_vector_leaf_visit_surface(
+bool collision_bsp_test_vector_leaf_visit_surface(
   struct collision_bsp_test_vector_context *const ctx,
   const blam_index_long leaf_index,
   const blam_real       fraction,
@@ -617,7 +617,7 @@ bool blam_collision_bsp_test_vector_leaf_visit_surface(
   if (leaf_index == -1)
       return false;
   
-  const blam_index_long surface_index = blam_collision_bsp_search_leaf(
+  const blam_index_long surface_index = collision_bsp_search_leaf(
     ctx->bsp,
     ctx->breakable_surfaces,
     leaf_index,
@@ -667,7 +667,7 @@ blam_bool collision_bsp_test_vector_leaf(
     const bool            splits_interior = false;
     const bool            expect_closed   = true; // surface after is backfacing
     
-    const bool result = blam_collision_bsp_test_vector_leaf_visit_surface(
+    const bool result = collision_bsp_test_vector_leaf_visit_surface(
       ctx, 
       tested_leaf, 
       fraction, 
@@ -685,7 +685,7 @@ blam_bool collision_bsp_test_vector_leaf(
     const bool            splits_interior = false;
     const bool            expect_closed   = false; // surface after is frontfacing
     
-    const bool result = blam_collision_bsp_test_vector_leaf_visit_surface(
+    const bool result = collision_bsp_test_vector_leaf_visit_surface(
       ctx, 
       tested_leaf, 
       fraction, 
@@ -705,7 +705,7 @@ blam_bool collision_bsp_test_vector_leaf(
     const bool splits_interior = true;
     const bool expect_closed   = false; // surface after is frontfacing
 
-    const bool result = blam_collision_bsp_test_vector_leaf_visit_surface(
+    const bool result = collision_bsp_test_vector_leaf_visit_surface(
       ctx, 
       tested_leaf, 
       fraction, 
