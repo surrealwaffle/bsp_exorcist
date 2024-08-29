@@ -33,8 +33,7 @@ int test_vector_node(
 static
 int test_vector_leaf(
   struct test_vector_context *ctx,
-  blam_index_long             leaf,
-  blam_real                   fraction);
+  blam_index_long             leaf);
 
 /**
  * \brief Checks if a BSP leaf contains a BSP2D reference on a given plane.
@@ -94,7 +93,7 @@ int test_vector_node(
   {
     // the node is a leaf, so test it as a leaf
     const blam_index_long leaf = blam_sanitize_long_s(root);
-    return test_vector_leaf(ctx, leaf, fraction);
+    return test_vector_leaf(ctx, leaf);
   }
   
   const struct blam_bsp3d_node *const node  = BLAM_TAG_BLOCK_GET(ctx->bsp, node, bsp3d_nodes, root);
@@ -133,8 +132,7 @@ int test_vector_node(
 
 int test_vector_leaf(
   struct test_vector_context *ctx,
-  blam_index_long             leaf,
-  blam_real                   fraction)
+  blam_index_long             leaf)
 {
   enum
   {
@@ -149,21 +147,21 @@ int test_vector_leaf(
   
   blam_index_long tested_leaf = -1;
   int surface_direction = 0; // no surface
-  bool splits_interior = false;
   
-  if (blam_bsp_leaf_type_interior(ctx->leaf_type) && leaf_type == k_bsp_leaf_type_exterior)
+  if (BLAM_UNLIKELY(ctx->plane_ignore == ctx->plane))
+  {
+    // CONTINUE; IGNORE THIS PLANE
+  } else if (blam_bsp_leaf_type_interior(ctx->leaf_type) && leaf_type == k_bsp_leaf_type_exterior)
   {
     // Testing front-facing surfaces
     // Plane splits BSP interior at ctx->leaf from BSP exterior at leaf.
     tested_leaf       = ctx->leaf;
-    splits_interior   = false;
     surface_direction = k_surface_direction_front_facing;
   } else if (ctx->leaf_type == k_bsp_leaf_type_exterior && blam_bsp_leaf_type_interior(leaf_type))
   {
     // Testing back-facing surfaces
     // Plane splits BSP exterior at ctx->leaf from BSP interior at leaf.
     tested_leaf       = leaf;
-    splits_interior   = false;
     surface_direction = k_surface_direction_back_facing;
   } else if (ctx->leaf_type == k_bsp_leaf_type_double_sided && leaf_type == k_bsp_leaf_type_double_sided)
   {
@@ -173,7 +171,6 @@ int test_vector_leaf(
     // This keeps the code in search_leaf very sane.
     /*
     tested_leaf       = ctx->leaf;
-    splits_interior   = false;
     surface_direction = k_surface_direction_front_facing;
     */
   } else
@@ -181,13 +178,8 @@ int test_vector_leaf(
     // CONTINUE; NO LEAF TO TEST
   }
   
-  if (tested_leaf != -1 && ctx->plane_ignore != ctx->plane)
-  {
-    if (search_leaf(ctx->bsp, tested_leaf, ctx->plane))
-      return surface_direction;
-    else
-      ; // CONTINUE; NO SURFACE INTERSECTED IN THIS LEAF
-  }
+  if (tested_leaf != -1 && search_leaf(ctx->bsp, tested_leaf, ctx->plane))
+    return surface_direction;
   
   ctx->leaf      = leaf;
   ctx->leaf_type = leaf_type;

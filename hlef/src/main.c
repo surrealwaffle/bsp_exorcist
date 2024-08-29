@@ -4,6 +4,9 @@
 
 BOOL APIENTRY DllMain(HINSTANCE hInstance, DWORD fdwReason, LPVOID lpvReserved)
 {
+  (void)hInstance;
+  (void)lpvReserved;
+  
   int error = 0; // 0 indicates no error, non-zero if error
   switch (fdwReason) {
     case DLL_PROCESS_ATTACH: error = hlef_load(); break;

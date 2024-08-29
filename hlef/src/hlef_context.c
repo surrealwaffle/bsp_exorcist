@@ -15,10 +15,15 @@ const char* const hlef_entry_point_names[k_hlef_entry_points] = {
 };
 #undef HLEF_NAME_ENTRY
 
+#ifdef __GNUC__
+# pragma GCC diagnostic push
+# pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif // __GNUC__
 static const struct hlef_scan_signature collision_bsp_test_vector_signature = {
     (void**)&HLEF_ENTRY_POINT(collision_bsp_test_vector),
     NULL,
     "6a 00 6a 00 56 e8 ?? ?? ?? ?? 83 c4 20",
+    // NOTE: missing field initializer warnings are OK here
     HLEF_SCAN_STEPS(
         {k_hlef_scan_translate, 6},
         {k_hlef_scan_read_rel32, 4}, // save the function ptr, for debugging
@@ -31,6 +36,9 @@ static const struct hlef_scan_signature collision_bsp_test_vector_signature = {
             .dst=&hlef_exotic_collision_bsp_test_vector} // operand for JMP rel32
     )
 };
+#ifdef __GNUC__
+# pragma GCC diagnostic pop
+#endif // __GNUC__
     
 static
 const struct hlef_scan_signature* const hlef_scan_signatures[] = {

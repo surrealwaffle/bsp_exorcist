@@ -46,7 +46,7 @@ struct collision_bsp_test_vector_context
  *                          If this value is negative, it is treated as a leaf node.
  * \param [in]     fraction The starting distance from the test origin, as a 
  *                          fraction of `ctx->delta`.
- * \param [in]     terminal The maximum distane from the test origin, as a fraction
+ * \param [in]     terminal The maximum distance from the test origin, as a fraction
  *                          of `ctx->delta`.
  *
  * \return \c true if a surface was intersected, otherwise \c false.
@@ -67,8 +67,6 @@ blam_bool collision_bsp_test_vector_node(
  *                          If this value is negative, it is treated as a leaf node.
  * \param [in]     fraction The starting distance from the test origin, as a 
  *                          fraction of `ctx->delta`.
- * \param [in]     terminal The maximum distane from the test origin, as a fraction
- *                          of `ctx->delta`.
  *
  * \return \c true if a surface was intersected, otherwise \c false.
  */
@@ -76,8 +74,7 @@ static
 blam_bool collision_bsp_test_vector_leaf(
   struct collision_bsp_test_vector_context *const ctx,
   blam_index_long leaf,
-  blam_real       fraction,
-  blam_real       terminal);
+  blam_real       fraction);
 
 /**
  * \brief Tests a vector against a BSP leaf for an intersected surface.
@@ -385,7 +382,9 @@ blam_index_long blam_collision_bsp_search_leaf(
     else if (collision_surface_verify_bsp(bsp, plane_index, origin, delta, fraction, expect_frontfacing))
       return surface_index; // COULD NOT REJECT SURFACE AS PHANTOM BSP
     else
-      ; // CONTINUE; NOTHING HIT
+    {
+      // NOTHING HIT, REJECT SURFACE
+    }
   }
   
   // NOTE: If splits_interior is false, then the plane splits the BSP interior
@@ -445,15 +444,15 @@ blam_bool blam_collision_surface_test2d(
     const struct blam_collision_vertex *const start = BLAM_TAG_BLOCK_GET(bsp, start, vertices, start_index);
     const struct blam_collision_vertex *const end   = BLAM_TAG_BLOCK_GET(bsp, end, vertices, end_index);
     
-    const blam_real2d p0 = {
+    const blam_real2d p0 = {{
       start->point.components[projection.first], 
       start->point.components[projection.second]
-    };
+    }};
     
-    const blam_real2d p1 = {
+    const blam_real2d p1 = {{
       end->point.components[projection.first], 
       end->point.components[projection.second]
-    };
+    }};
     
     const blam_real2d point_delta = blam_real2d_sub(point, &p0);
     const blam_real2d edge_delta  = blam_real2d_sub(&p1, &p0);
@@ -528,7 +527,7 @@ blam_bool collision_bsp_test_vector_node(
   if (BLAM_UNLIKELY(root < 0))
   {
     const blam_index_long leaf = blam_sanitize_long_s(root);
-    return collision_bsp_test_vector_leaf(ctx, leaf, fraction, terminal);
+    return collision_bsp_test_vector_leaf(ctx, leaf, fraction);
   }
   
   const struct blam_bsp3d_node *const node  = BLAM_TAG_BLOCK_GET(ctx->bsp, node, bsp3d_nodes, root);
@@ -652,8 +651,7 @@ bool blam_collision_bsp_test_vector_leaf_visit_surface(
 blam_bool collision_bsp_test_vector_leaf(
   struct collision_bsp_test_vector_context *const ctx,
   const blam_index_long leaf,
-  const blam_real       fraction,
-  const blam_real       terminal)
+  const blam_real       fraction)
 {
   const enum blam_bsp_leaf_type leaf_type = blam_collision_bsp_classify_leaf(ctx->bsp, leaf);
   BLAM_ASSUME(k_bsp_leaf_type_none <= leaf_type && leaf_type <= k_bsp_leaf_type_exterior);

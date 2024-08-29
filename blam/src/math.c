@@ -166,11 +166,11 @@ blam_real3d blam_real3d_cross(const blam_real3d *u, const blam_real3d *v)
 {
   assert(u);
   assert(v);
-  const blam_real3d result = {
+  const blam_real3d result = {{
     u->components[1] * v->components[2] - u->components[2] * v->components[1],
     u->components[2] * v->components[0] - u->components[0] * v->components[2],
     u->components[0] * v->components[1] - u->components[1] * v->components[0]
-  };
+  }};
   return result;
 }
 
@@ -333,9 +333,8 @@ blam_real2d blam_real3d_projected_components(
 {
   assert(v);
   
-  blam_index_short ppi, spi;
   blam_pair_int i = blam_projection_plane_indices(plane, is_forward_plane);
-  blam_real2d result = {v->components[i.first], v->components[i.second]};
+  blam_real2d result = {{v->components[i.first], v->components[i.second]}};
   
   return result;
 }

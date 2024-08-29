@@ -222,6 +222,7 @@ void hlef_scan_step_move(
     const struct hlef_scan_step *step,
     char** pcursor)
 {
+    (void)sig;
     assert(kr_hlef_scan_step_move_type <= step->type && step->type < kr_hlef_scan_step_move_type_end);
     
     const ptrdiff_t offset = step->offset;
@@ -287,6 +288,7 @@ void* write_mem_address(
     const struct hlef_scan_step *step,
     char* cursor)
 {
+    (void)sig;
     switch (step->type) {
         case k_hlef_scan_write_rel32:
             return cursor;
@@ -304,6 +306,8 @@ size_t write_mem_size(
     const struct hlef_scan_step *step,
     char* cursor)
 {
+    (void)sig;
+    (void)cursor;
     switch (step->type) {
         case k_hlef_scan_write_nop:
             return step->len;
@@ -324,7 +328,6 @@ void hlef_scan_step_write(
 {
     assert(kr_hlef_scan_step_write_type <= step->type && step->type < kr_hlef_scan_step_write_type_end);
     
-    const ptrdiff_t offset = step->offset;
     char* cursor = *pcursor;
     
     void*  write_address = write_mem_address(sig, step, cursor);
@@ -354,6 +357,9 @@ void hlef_scan_step_write(
             assert(step->src);
             memcpy(write_address, step->src, write_len);
             break;
+        default:
+            assert(false);
+            break;
     }
     
     VirtualProtect(
@@ -371,7 +377,6 @@ void* hlef_scan(const struct hlef_scan_signature *sig)
     if (cursor) {
         const struct hlef_scan_step *step = sig->steps;
         for (; step->type != k_hlef_scan_return; ++step) {
-            const ptrdiff_t offset = step->offset;
             switch (step->type) {
                 case k_hlef_scan_translate:
                 case k_hlef_scan_mem32:
