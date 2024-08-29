@@ -49,7 +49,7 @@ assumption does not hold, resulting in excess surface area attributed to the loc
 surface. This results in the well-known phantom BSP on Danger Canyon.
 
 If we then perform a surface-vector intersection test to verify that a surface was 
-indeed intersected, holes are then punched into the BSP (different from BSP leaks) 
+indeed intersected, holes are presented in the BSP (different from BSP leaks) 
 even in infinite precision, because the dividing planes are incorrect and may cut 
 into valid surface in another leaf. This is why con's [ghostbuster](https://opencarnage.net/index.php?/topic/8069-ghostbuster-a-phantom-bsp-tag-fixer-deprecated/)
 tool produces holes. The most obvious example of this is a face of the central 
@@ -59,7 +59,7 @@ pillar on Wizard, as shown below.
 
 The red arrow into the face indicates where the vector intersects with the surface.
 The red outline indicates the surface intersected. The lime-green line indicates 
-where the top and bottom surfaces are split along the face. As shown, excess 
+where the top and bottom surfaces are split in the BSP. As shown, excess 
 geometry is attributed to the bottom surface. Eliminating that excess geometry 
 would introduce a hole into the BSP, because the surface that should be intersected 
 is never tested in the first place.
