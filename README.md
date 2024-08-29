@@ -8,6 +8,22 @@ which admits most real surfaces, followed by a second, more expensive test which
 admits real surfaces and rejects most forms of phantom BSP. This technique works 
 well under the assumption that phantom BSP and BSP holes are rare.
 
+## Build
+To build this project, a compiler that supports `C11` is required and involves the 
+usual `CMake` build process.
+
+```
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cd build
+cmake --build .
+```
+
+This builds `hlef.dll`, which applies the necessary patches upon being loaded in an 
+all-or-nothing fashion. The patches *should* work for both server and client 
+binaries.
+
+Users will need some way to load this library. This exercise is left to the reader.
+
 ## Why does phantom BSP occur?
 `tool.exe` may compile incorrect BSPs (both for map and collision models), 
 especially when nearly coplanar surface warnings are emitted. This behaviour 
@@ -53,3 +69,4 @@ is never tested in the first place.
  * Reverse `collision_debug_phantom_bsp` to determine how Sapien detects phantom BSP
  * Convert to C++ (maybe)
  * Mitigate BSP leaks
+ * Provide APIs to control mitigation behaviour
