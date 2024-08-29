@@ -63,6 +63,7 @@ technique produces holes. Consider an example from Wizard.
  * The red arrow into the face indicates where the vector intersects with the surface.
  * The red outline indicates the surface intersected. 
  * The lime-green line indicates where the top-bottom surface split in the BSP. 
+
 As shown, excess geometry is attributed to the bottom surface. Eliminating that 
 excess geometry would introduce a hole into the BSP, because the surface that 
 should be intersected is never tested in the first place.
