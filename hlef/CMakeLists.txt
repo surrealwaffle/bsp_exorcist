@@ -29,7 +29,7 @@ target_link_libraries(hlef
         dbghelp
         psapi
         blam
-        $<$<OR:$<C_COMPILER_ID:GNU>, $<C_COMPILER_ID:CLANG>>:-static-libgcc>)
+        $<$<C_COMPILER_ID:GNU,CLANG>:-static-libgcc>)
 set_target_properties(hlef
     PROPERTIES
         C_STANDARD 11
