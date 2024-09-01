@@ -360,23 +360,42 @@ blam_index_long collision_bsp_search_leaf(
     // planes defining the extent of the phantom BSP may split surfaces in other 
     // leaves. The most well-known example of this is a face of the central pillar 
     // on Wizard.
-    if (!splits_interior && !mitigate_phantom_bsp)
-      return surface_index; // Sealed-world rules; surface must be hit.
-    else if (collision_surface_test2d(bsp, breakable_surfaces, surface_index, projection_plane, is_forward_plane, &projection))
-      return surface_index; // Surface was hit in a 2D projection test.
-    else if (!mitigate_phantom_bsp)
-      ; // CONTINUE; MITIGATIONS DISABLED
-    //else if (collision_surface_test3d(bsp, breakable_surfaces, surface_index, origin, delta))
-    //  return surface_index; // Did not meaningfully mitigate phantom BSP over the 2D test.
-    else if (splits_interior)
-      ; // CONTINUE; VANILLA BEHAVIOUR REQUIRED IN THIS CASE
-    else if (collision_surface_broken(bsp, breakable_surfaces, surface_index))
-      ; // CONTINUE; SURFACE IS BROKEN
-    else if (collision_surface_verify_bsp(bsp, plane_index, origin, delta, fraction, expect_frontfacing))
-      return surface_index; // COULD NOT REJECT SURFACE AS PHANTOM BSP
-    else
+    if (!mitigate_phantom_bsp)
     {
-      // NOTHING HIT, REJECT SURFACE
+      if (!splits_interior)
+        return surface_index; // Sealed-world rules; surface must hit.
+      else if (collision_surface_test2d(bsp, breakable_surfaces, surface_index, projection_plane, is_forward_plane, &projection))
+        return surface_index;
+    } else 
+    {
+      // PHANTOM BSP MITIGATION:
+      // Perform the collision_surface_test2d as a quick check. If this indicates 
+      // an intersection, then we can halt immediately.
+      //
+      // Otherwise, if the intersection splits interior leaves, continue to the next
+      // reference.
+      //
+      // Find the next intersected surface, with all mitigations turned off. 
+      // If the orientation of the next mitigated surface matches the expectation, 
+      // then accept the surface. 
+      if (collision_surface_test2d(bsp, breakable_surfaces, surface_index, projection_plane, is_forward_plane, &projection))
+        return surface_index;
+      else if (splits_interior)
+        ; // CONTINUE; NO SURFACE HIT
+      else if (collision_surface_test3d(bsp, breakable_surfaces, surface_index, origin, delta))
+        return surface_index; // See note below.
+      else if (collision_surface_broken(bsp, breakable_surfaces, surface_index))
+        ; // CONTINUE; SURFACE IS BROKEN (the compiler can optimize this case out)
+      else if (collision_surface_verify_bsp(bsp, plane_index, origin, delta, fraction, expect_frontfacing))
+        return surface_index; // COULD NOT REJECT SURFACE AS PHANTOM BSP
+      else
+      { /* REJECT SURFACE */ }
+      
+      // NOTE ON USE OF collision_surface_test3d
+      // This test is employed because the current implementation creates holes for 
+      // line intersections on the edges of a leaf where the next interior leaf 
+      // intersected is through a BSP leak. This additional test shrinks these holes 
+      // to negligible levels, but a proper fix would involve addressing BSP leaks.
     }
   }
   
