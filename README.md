@@ -32,11 +32,10 @@ This section will document how Halo represents and traverses BSP structures, and
 phantom BSP and BSP leaks occur.
 
 If you are more comfortable looking at code, see 
-[this commit](dc30e0fc26a1d7e6be67c03aec9efdbcf7babe05/blam/src/collision.c#L153),
-which contains the BSP-vector intersection subroutine as implemented in Halo PC. 
-Note that in this version of the code, I refer to BSP leaks as holes. I later 
-settled on the term BSP leak to differentiate it from holes that may be introduced 
-through mitigation methods.
+dc30e0fc26a1d7e6be67c03aec9efdbcf7babe05, which contains the BSP-vector 
+intersection subroutine as implemented in Halo PC. Note that in this version of the 
+code, I refer to BSP leaks as holes. I later settled on the term BSP leak to 
+differentiate it from holes that may be introduced through mitigation methods.
 
 ## Background Knowledge
 This section assumes a bit of background knowledge in BSP trees and related 
