@@ -335,15 +335,8 @@ blam_index_long collision_bsp_search_leaf(
     const blam_index_long reference_plane = blam_sanitize_long(ref->plane);
     const bool reference_plane_inverted   = ref->plane < 0;
     
-    // NOTE: BSP HOLES
-    // In the case when the plane splitting the BSP interior and exterior is not 
-    // assigned to any of the BSP2D references in this leaf, BSP holes occur because 
-    // no surface was found with the splitting plane. This occurs when the BSP2D 
-    // reference that contains the surface of interest is assigned a plane that is 
-    // nearly coplanar with the splitting plane.
-    //
-    // Possible resolution: Find a nearly-coplanar plane in the leaf with minimal 
-    //                      distance to the intersection point.
+    // NOTE: BSP LEAKS
+    // If no BSP2D reference is assigned to plane_index, then we get a BSP leak.
     if (plane_index != reference_plane)
         continue;
     
@@ -388,7 +381,7 @@ blam_index_long collision_bsp_search_leaf(
   }
   
   // NOTE: If splits_interior is false, then the plane splits the BSP interior
-  //       and exterior. Returning -1 in this case indicates a BSP hole, violating 
+  //       and exterior. Returning -1 in this case indicates a BSP leak, violating 
   //       the sealed world property.
   return -1;
 }
