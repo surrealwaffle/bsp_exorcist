@@ -16,7 +16,7 @@ static bool mitigate_phantom_bsp = true;
 /**
  * \brief Manages the state required for a BSP-vector intersection test.
  */
-struct collision_bsp_test_vector_context
+struct test_vector_context
 {
   blam_flags_long                  flags; ///< See `enum blam_collision_test_flags`;
                                           ///< masked by `k_collision_test_bsp_bits`.
@@ -36,7 +36,7 @@ struct collision_bsp_test_vector_context
   blam_enum_byte  leaf_type; ///< The category of the previous leaf visited.
                              ///< See `enum blam_bsp_leaf_type`.
   blam_index_long plane;     ///< The index of the last plane crossed.
-}; BLAM_ASSERT_SIZE(struct collision_bsp_test_vector_context, 0x28);
+}; BLAM_ASSERT_SIZE(struct test_vector_context, 0x28);
 
 /**
  * \brief Tests a vector against a collision BSP subtree.
@@ -53,7 +53,7 @@ struct collision_bsp_test_vector_context
  */
 static
 blam_bool collision_bsp_test_vector_node(
-  struct collision_bsp_test_vector_context *ctx,
+  struct test_vector_context *ctx,
   blam_index_long root,
   blam_real       fraction, 
   blam_real       terminal
@@ -72,7 +72,7 @@ blam_bool collision_bsp_test_vector_node(
  */
 static
 blam_bool collision_bsp_test_vector_leaf(
-  struct collision_bsp_test_vector_context *const ctx,
+  struct test_vector_context *const ctx,
   blam_index_long leaf,
   blam_real       fraction);
 
@@ -196,7 +196,7 @@ blam_bool blam_collision_bsp_test_vector(
   assert(bsp);
   assert(data);
 
-  struct collision_bsp_test_vector_context ctx =
+  struct test_vector_context ctx =
   {
     .flags              = flags,
     .bsp                = bsp,
@@ -531,7 +531,7 @@ bool collision_surface_test3d(
 }
 
 blam_bool collision_bsp_test_vector_node(
-  struct collision_bsp_test_vector_context *const ctx,
+  struct test_vector_context *const ctx,
   const blam_index_long root,
   const blam_real       fraction,
   const blam_real       terminal)
@@ -618,7 +618,7 @@ blam_bool collision_bsp_test_vector_node(
  */
 static
 bool collision_bsp_test_vector_leaf_visit_surface(
-  struct collision_bsp_test_vector_context *const ctx,
+  struct test_vector_context *const ctx,
   const blam_index_long leaf_index,
   const blam_real       fraction,
   const bool            splits_interior,
@@ -661,7 +661,7 @@ bool collision_bsp_test_vector_leaf_visit_surface(
 }
 
 blam_bool collision_bsp_test_vector_leaf(
-  struct collision_bsp_test_vector_context *const ctx,
+  struct test_vector_context *const ctx,
   const blam_index_long leaf,
   const blam_real       fraction)
 {
