@@ -13,22 +13,23 @@
 
 static bool mitigate_phantom_bsp = true;
 
+typedef struct blam_collision_bsp collision_bsp;
+typedef struct blam_bit_vector    bit_vector;
+typedef struct blam_collision_bsp_test_vector_result test_vector_result;
+
 /**
  * \brief Manages the state required for a BSP-vector intersection test.
  */
 struct test_vector_context
 {
-  blam_flags_long                  flags; ///< See `enum blam_collision_test_flags`;
-                                          ///< masked by `k_collision_test_bsp_bits`.
-  const struct blam_collision_bsp *bsp;   ///< The BSP to test against.
-  struct blam_bit_vector           breakable_surfaces; ///< The state of breakable 
-                                                       ///<surfaces.
-  const blam_real3d               *origin; ///< The tested vector origin.
-  const blam_real3d               *delta;  ///< The tested vector endpoint, relative 
-                                           ///< to #origin.
+  blam_flags_long      flags;  ///< See `enum blam_collision_test_flags`;
+                               ///< masked by `k_collision_test_bsp_bits`.
+  const collision_bsp *bsp;    ///< The BSP to test against.
+  bit_vector           breakable_surfaces; ///< The state of breakable surfaces.
+  const blam_real3d   *origin; ///< The tested vector origin.
+  const blam_real3d   *delta;  ///< The tested vector endpoint, relative to #origin.
 
-  struct blam_collision_bsp_test_vector_result *data; ///< Receives the intersection 
-                                                      ///< result.
+  test_vector_result *data;    ///< Receives the intersection result.
 
   // ---------------------------------
   // Immediate History Values
@@ -100,14 +101,14 @@ blam_bool collision_bsp_test_vector_leaf(
  */
 static
 blam_index_long collision_bsp_search_leaf(
-  const struct blam_collision_bsp *bsp,
-  struct blam_bit_vector  breakable_surfaces,
-  blam_index_long         leaf_index,
-  blam_index_long         plane_index,
-  bool                    splits_interior,
-  const blam_real3d      *origin,
-  const blam_real3d      *delta,
-  blam_real               fraction,
+  const collision_bsp *bsp,
+  bit_vector           breakable_surfaces,
+  blam_index_long      leaf_index,
+  blam_index_long      plane_index,
+  bool                 splits_interior,
+  const blam_real3d   *origin,
+  const blam_real3d   *delta,
+  blam_real            fraction,
   
   // NON-VANILLA PARAMETERS
   bool expect_closed);
@@ -130,12 +131,12 @@ blam_index_long collision_bsp_search_leaf(
 BLAM_ATTRIBUTE(noinline)
 static
 blam_bool collision_surface_test2d(
-  const struct blam_collision_bsp *bsp,
-  struct blam_bit_vector           breakable_surfaces,
-  blam_index_long                  surface_index,
-  enum blam_projection_plane       plane,
-  blam_bool                        is_forward_plane,
-  const blam_real2d               *point);
+  const collision_bsp        *bsp,
+  bit_vector                  breakable_surfaces,
+  blam_index_long             surface_index,
+  enum blam_projection_plane  plane,
+  blam_bool                   is_forward_plane,
+  const blam_real2d          *point);
 
 /**
  * \brief Tests if a vector intersects a surface, without projection.
@@ -153,19 +154,19 @@ blam_bool collision_surface_test2d(
 BLAM_ATTRIBUTE(noinline)
 static
 bool collision_surface_test3d(
-  const struct blam_collision_bsp *bsp,
-  struct blam_bit_vector           breakable_surfaces,
-  blam_index_long                  surface_index,
-  const blam_real3d               *origin,
-  const blam_real3d               *delta);  
+  const collision_bsp *bsp,
+  bit_vector           breakable_surfaces,
+  blam_index_long      surface_index,
+  const blam_real3d   *origin,
+  const blam_real3d   *delta);  
 
 // -----------------------------------------------------------------------------
 // EXPOSED API
 
 blam_index_long blam_collision_bsp_search(
-  const struct blam_collision_bsp *const bsp,
-  blam_index_long                        root,
-  const blam_real3d *const               point)
+  const collision_bsp *const bsp,
+  blam_index_long            root,
+  const blam_real3d *const   point)
 {
     typedef struct blam_bsp3d_node node_type;
     typedef struct blam_plane3d    plane_type;
@@ -185,13 +186,13 @@ blam_index_long blam_collision_bsp_search(
 }
 
 blam_bool blam_collision_bsp_test_vector(
-  const struct blam_collision_bsp *const bsp,
-  const struct blam_bit_vector           breakable_surfaces,
-  const blam_real3d *const               origin,
-  const blam_real3d *const               delta,
-  blam_real                              max_scale,
-  const blam_flags_long                  flags, // enum blam_collision_test_flags
-  struct blam_collision_bsp_test_vector_result *const data)
+  const collision_bsp *const bsp,
+  const bit_vector           breakable_surfaces,
+  const blam_real3d *const   origin,
+  const blam_real3d *const   delta,
+  blam_real                  max_scale,
+  const blam_flags_long      flags, // enum blam_collision_test_flags
+  test_vector_result *const  data)
 {
   assert(bsp);
   assert(data);
@@ -236,9 +237,9 @@ blam_bool blam_collision_bsp_test_vector(
 BLAM_ATTRIBUTE(pure)
 static
 bool collision_surface_broken(
-  const struct blam_collision_bsp *bsp,
-  const struct blam_bit_vector     breakable_surfaces,
-  const blam_index_long            surface_index)
+  const collision_bsp   *bsp,
+  const bit_vector       breakable_surfaces,
+  const blam_index_long  surface_index)
 {
   const struct blam_collision_surface *const surface = BLAM_TAG_BLOCK_GET(bsp, surface, surfaces, surface_index);
   
@@ -266,12 +267,12 @@ bool collision_surface_broken(
  */
 static
 bool collision_surface_verify_bsp(
-  const struct blam_collision_bsp *bsp,
-  const blam_index_long            plane_index,
-  const blam_real3d               *origin,
-  const blam_real3d               *delta,
-  const blam_real                  fraction,
-  const bool                       expect_closed)
+  const collision_bsp   *bsp,
+  const blam_index_long  plane_index,
+  const blam_real3d     *origin,
+  const blam_real3d     *delta,
+  const blam_real        fraction,
+  const bool             expect_closed)
 {
   const int next_surface_direction = blamext_collision_bsp_test_vector_next_surface_orientation(
     bsp,
@@ -296,14 +297,14 @@ bool collision_surface_verify_bsp(
 }
 
 blam_index_long collision_bsp_search_leaf(
-  const struct blam_collision_bsp *const bsp,
-  const struct blam_bit_vector  breakable_surfaces,
-  const blam_index_long         leaf_index,
-  const blam_index_long         plane_index,
-  const bool                    splits_interior,
-  const blam_real3d      *const origin,
-  const blam_real3d      *const delta,
-  const blam_real               fraction,
+  const collision_bsp *const bsp,
+  const bit_vector           breakable_surfaces,
+  const blam_index_long      leaf_index,
+  const blam_index_long      plane_index,
+  const bool                 splits_interior,
+  const blam_real3d *const   origin,
+  const blam_real3d *const   delta,
+  const blam_real            fraction,
   
   // NON-VANILLA PARAMETERS
   bool expect_frontfacing)
@@ -424,12 +425,12 @@ blam_index_long blam_bsp2d_search(
 }
 
 blam_bool collision_surface_test2d(
-  const struct blam_collision_bsp *bsp,
-  struct blam_bit_vector           breakable_surfaces,
-  blam_index_long                  surface_index,
-  enum blam_projection_plane       plane,
-  blam_bool                        is_forward_plane,
-  const blam_real2d               *point)
+  const collision_bsp        *bsp,
+  bit_vector                  breakable_surfaces,
+  blam_index_long             surface_index,
+  enum blam_projection_plane  plane,
+  blam_bool                   is_forward_plane,
+  const blam_real2d          *point)
 {
   assert(point);
   assert(bsp);
@@ -482,11 +483,11 @@ blam_bool collision_surface_test2d(
 }
 
 bool collision_surface_test3d(
-  const struct blam_collision_bsp *bsp,
-  struct blam_bit_vector           breakable_surfaces,
-  blam_index_long                  surface_index,
-  const blam_real3d               *origin,
-  const blam_real3d               *delta)
+  const collision_bsp *bsp,
+  bit_vector           breakable_surfaces,
+  blam_index_long      surface_index,
+  const blam_real3d   *origin,
+  const blam_real3d   *delta)
 {
   assert(origin);
   assert(delta);
@@ -532,9 +533,9 @@ bool collision_surface_test3d(
 
 blam_bool collision_bsp_test_vector_node(
   struct test_vector_context *const ctx,
-  const blam_index_long root,
-  const blam_real       fraction,
-  const blam_real       terminal)
+  const blam_index_long             root,
+  const blam_real                   fraction,
+  const blam_real                   terminal)
 {
   if (BLAM_UNLIKELY(root < 0))
   {
@@ -619,9 +620,9 @@ blam_bool collision_bsp_test_vector_node(
 static
 bool collision_bsp_test_vector_leaf_visit_surface(
   struct test_vector_context *const ctx,
-  const blam_index_long leaf_index,
-  const blam_real       fraction,
-  const bool            splits_interior,
+  const blam_index_long             leaf_index,
+  const blam_real                   fraction,
+  const bool                        splits_interior,
   
   // NON-VANILLA PARAMETERS
   bool expect_closed)
@@ -662,8 +663,8 @@ bool collision_bsp_test_vector_leaf_visit_surface(
 
 blam_bool collision_bsp_test_vector_leaf(
   struct test_vector_context *const ctx,
-  const blam_index_long leaf,
-  const blam_real       fraction)
+  const blam_index_long             leaf,
+  const blam_real                   fraction)
 {
   const enum blam_bsp_leaf_type leaf_type = blam_collision_bsp_classify_leaf(ctx->bsp, leaf);
   BLAM_ASSUME(k_bsp_leaf_type_none <= leaf_type && leaf_type <= k_bsp_leaf_type_exterior);
