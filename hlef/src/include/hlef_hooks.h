@@ -2,7 +2,7 @@
 #define HLEF_HOOKS_H
 
 #include "blam/base.h"
-#include "blam/collision.h"
+#include "blam/collision_bsp.h"
 
 blam_bool hlef_hook_collision_bsp_test_vector(
   struct blam_collision_bsp *bsp,

@@ -4,7 +4,7 @@
 
 #include <assert.h>
 
-#include "blam/collision.h"
+#include "blam/collision_bsp.h"
 
 // ---------------------------------------------------------------------------------
 // INTERNAL DECLARATIONS, STRUCTURES, ENUMS

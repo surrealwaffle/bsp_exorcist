@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 #include "hlef_base.h"
-#include "blam/collision.h"
+#include "blam/collision_bsp.h"
 
 #define HLEF_ENTRY_POINT(name) hlef_context.entry_points[k_hlef_entry_ ## name]
 

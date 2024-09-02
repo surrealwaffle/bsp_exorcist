@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #include "blam/base.h"
-#include "blam/collision.h"
+#include "blam/collision_bsp.h"
 
 /* WARNING
  * These functions use an exotic ABI, used to hook Halo's functions.

@@ -2,7 +2,7 @@
 #define BLAM_COLLISION_BSP_EXT_H
 
 #include "blam/base.h"
-#include "blam/collision.h"
+#include "blam/collision_bsp.h"
 #include "blam/math.h"
 
 /**

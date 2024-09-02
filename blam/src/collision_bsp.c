@@ -1,4 +1,4 @@
-#include "blam/collision.h"
+#include "blam/collision_bsp.h"
 
 #include <stdbool.h>
 #include <assert.h>
