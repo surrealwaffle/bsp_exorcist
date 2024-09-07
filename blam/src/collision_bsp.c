@@ -18,26 +18,74 @@ typedef struct blam_bit_vector    bit_vector;
 typedef struct blam_collision_bsp_test_vector_result test_vector_result;
 
 /**
+ * \brief Manages additional, non-vanilla state for BSP-vector intersection tests.
+ *
+ * \sa #test_vector_context
+ */
+struct test_vector_context_ext
+{
+  bool has_pending_result;    ///< \c true if there is a #pending result.
+  
+  struct 
+  {
+    blam_real       fraction; ///< The intersection fraction with #surface.
+    blam_index_long plane;    ///< The index of the intersected partitioning plane.
+    blam_index_long surface;  ///< The index of the intersected surface candidate.
+  } pending; ///< May hold an intersection result for verification.
+             ///< The result is considered verified and accepted only when the 
+             ///< solid partition that follows does not feature a leak.
+};
+
+/**
  * \brief Manages the state required for a BSP-vector intersection test.
  */
 struct test_vector_context
 {
-  blam_flags_long      flags;  ///< See `enum blam_collision_test_flags`;
-                               ///< masked by `k_collision_test_bsp_bits`.
+  enum blam_collision_test_flags flags; ///< Masked by \c k_collision_test_bsp_bits.
   const collision_bsp *bsp;    ///< The BSP to test against.
   bit_vector           breakable_surfaces; ///< The state of breakable surfaces.
   const blam_real3d   *origin; ///< The tested vector origin.
   const blam_real3d   *delta;  ///< The tested vector endpoint, relative to #origin.
 
-  test_vector_result *data;    ///< Receives the intersection result.
+  test_vector_result  *data;   ///< Receives the intersection result.
 
   // ---------------------------------
   // Immediate History Values
-  blam_index_long leaf;      ///< The index of the previous leaf visited.
-  blam_enum_byte  leaf_type; ///< The category of the previous leaf visited.
-                             ///< See `enum blam_bsp_leaf_type`.
-  blam_index_long plane;     ///< The index of the last plane crossed.
-}; BLAM_ASSERT_SIZE(struct test_vector_context, 0x28);
+  blam_index_long         leaf;      ///< The index of the previous leaf visited.
+  enum blam_bsp_leaf_type leaf_type; ///< The category of the previous leaf visited.
+  blam_index_long         plane;     ///< The index of the last plane crossed.
+  
+  struct test_vector_context_ext ext; ///< (NON-VANILLA) Extended context data.
+};
+
+/**
+ * \brief Attempts to commit a surface intersection result to the context object.
+ *
+ * \param [in,out] ctx           The test context.
+ * \param [in]     fraction      The proportional intersection distance.
+ * \param [in]     plane_index   The index of the intersected plane.
+ * \param [in]     surface_index The index of the intersected surface.
+ * 
+ * \return \c true if the result was committed, otherwise \c false.
+ */
+static
+blam_bool test_vector_context_try_commit_result(
+  struct test_vector_context *ctx,
+  blam_real       fraction,
+  blam_index_long plane_index,
+  blam_index_long surface_index);
+
+/**
+ * \brief Attempts to commit a pending intersection result, if any.
+ *
+ * \param [in,out] ctx The test context.
+ *
+ * \return \c true if there was a pending result in the context data and it was 
+ *         committed, otherwise \c false.
+ */
+static
+blam_bool test_vector_context_try_commit_pending_result(
+  struct test_vector_context *ctx);
 
 /**
  * \brief Tests a vector against a collision BSP subtree.
@@ -93,9 +141,6 @@ blam_bool collision_bsp_test_vector_leaf(
  * \param [in] delta              The vector endpoint, relative to \a origin.
  * \param [in] fraction           The distance to the test point, as a fraction of 
  *                                \a delta.
- * \param [in] expect_closed      If \c true and an intersection occurs in this 
- *                                leaf, the surface intersected after this leaf 
- *                                is expected to be back-facing.
  *
  * \return The index of the intersected surface, or `-1` if no surface was hit.
  */
@@ -108,10 +153,7 @@ blam_index_long collision_bsp_search_leaf(
   bool                 splits_interior,
   const blam_real3d   *origin,
   const blam_real3d   *delta,
-  blam_real            fraction,
-  
-  // NON-VANILLA PARAMETERS
-  bool expect_closed);
+  blam_real            fraction);
 
 /**
  * \brief Tests if \a point is on a surface projected onto a cardinal plane.
@@ -207,7 +249,11 @@ blam_bool blam_collision_bsp_test_vector(
     .data               = data,
     .leaf               = -1,
     .leaf_type          = k_bsp_leaf_type_none,
-    .plane              = -1
+    .plane              = -1,
+    .ext                = 
+    {
+      .has_pending_result = false
+    }
   };
   data->fraction     = fmaxf(max_scale, 0.0f); // Halo doesnt fully clamp here
   data->leaves.count = 0;
@@ -219,7 +265,10 @@ blam_bool blam_collision_bsp_test_vector(
   else if (BLAM_UNLIKELY(max_scale > 1.0f))
     max_scale = 1.0f;
 
-  return collision_bsp_test_vector_node(&ctx, root, start_fraction, max_scale);
+  if (collision_bsp_test_vector_node(&ctx, root, start_fraction, max_scale))
+    return true;
+  else
+    return test_vector_context_try_commit_pending_result(&ctx);
 }
 
 // -----------------------------------------------------------------------------
@@ -304,10 +353,7 @@ blam_index_long collision_bsp_search_leaf(
   const bool                 splits_interior,
   const blam_real3d *const   origin,
   const blam_real3d *const   delta,
-  const blam_real            fraction,
-  
-  // NON-VANILLA PARAMETERS
-  bool expect_frontfacing)
+  const blam_real            fraction)
 {
   assert(bsp);
   assert(origin);
@@ -350,54 +396,20 @@ blam_index_long collision_bsp_search_leaf(
     const blam_index_long surface_index = blam_bsp2d_search(&bsp->bsp2d, ref->root_node, &projection);
     
     // NOTE: PHANTOM BSP
-    // If splits_interior is false, then phantom BSP can occur here, because Halo
-    // assumes that the surface spans the splitting plane within the leaf volume due 
-    // to the sealed world property. If the plane extends beyond the extents of the 
-    // surface, then excess area is attributed to the surface.
+    // When splits_interior is false, phantom BSP can occur because Halo assumes 
+    // that a partitioning plane associated with a BSP2D reference in this leaf is 
+    // completely solid within the extents of this leaf. This is true within a 
+    // sealed world. If the face of this leaf on this plane extends beyond the 
+    // extents of actual surface data (due to improperly placed partitions), then 
+    // phantom BSP occurs.
     //
-    // If we force splits_interior to true, artifacts are introduced that punch
-    // holes into the surface (differs from BSP holes as described above). These 
-    // holes occur where phantom BSP is present over other surfaces, because the 
-    // planes defining the extent of the phantom BSP may split surfaces in other 
-    // leaves. The most well-known example of this is a face of the central pillar 
-    // on Wizard.
-    if (!mitigate_phantom_bsp)
-    {
-      if (!splits_interior)
-        return surface_index; // Sealed-world rules; surface must hit.
-      else if (collision_surface_test2d(bsp, breakable_surfaces, surface_index, projection_plane, is_forward_plane, &projection))
-        return surface_index;
-    } else 
-    {
-      // PHANTOM BSP MITIGATION:
-      // Perform the collision_surface_test2d as a quick check. If this indicates 
-      // an intersection, then we can halt immediately.
-      //
-      // Otherwise, if the intersection splits interior leaves, continue to the next
-      // reference.
-      //
-      // Find the next intersected surface, with all mitigations turned off. 
-      // If the orientation of the next mitigated surface matches the expectation, 
-      // then accept the surface. 
-      if (collision_surface_test2d(bsp, breakable_surfaces, surface_index, projection_plane, is_forward_plane, &projection))
-        return surface_index;
-      else if (splits_interior)
-        ; // CONTINUE; NO SURFACE HIT
-      else if (collision_surface_test3d(bsp, breakable_surfaces, surface_index, origin, delta))
-        return surface_index; // See note below.
-      else if (collision_surface_broken(bsp, breakable_surfaces, surface_index))
-        ; // CONTINUE; SURFACE IS BROKEN (the compiler can optimize this case out)
-      else if (collision_surface_verify_bsp(bsp, plane_index, origin, delta, fraction, expect_frontfacing))
-        return surface_index; // COULD NOT REJECT SURFACE AS PHANTOM BSP
-      else
-      { /* REJECT SURFACE */ }
-      
-      // NOTE ON USE OF collision_surface_test3d
-      // This test is employed because the current implementation creates holes for 
-      // line intersections on the edges of a leaf where the next interior leaf 
-      // intersected is through a BSP leak. This additional test shrinks these holes 
-      // to negligible levels, but a proper fix would involve addressing BSP leaks.
-    }
+    // Furthermore, if we validate against surface data in infinite precision, we 
+    // punch holes into the BSP because phantom BSP can occur over surfaces in 
+    // another leaf. 
+    if (!splits_interior)
+      return surface_index;
+    else if (collision_surface_test2d(bsp, breakable_surfaces, surface_index, projection_plane, is_forward_plane, &projection))
+      return surface_index; 
   }
   
   // NOTE: If splits_interior is false, then the plane splits the BSP interior
@@ -531,6 +543,49 @@ bool collision_surface_test3d(
   return all_signed || all_unsigned;
 }
 
+blam_bool test_vector_context_try_commit_result(
+  struct test_vector_context *ctx,
+  blam_real       fraction,
+  blam_index_long plane_index,
+  blam_index_long surface_index)
+{
+  assert(ctx);
+  assert(plane_index != -1);
+  
+  if (surface_index == -1)
+    return false;
+  
+  const struct blam_collision_surface *const surface = BLAM_TAG_BLOCK_GET(ctx->bsp, surface, surfaces, surface_index);
+  if (((surface->flags & 0x02) != 0 && (ctx->flags & k_collision_test_ignore_invisible_surfaces) != 0)
+      || ((surface->flags & 0x08) != 0 && (ctx->flags & k_collision_test_ignore_breakable_surfaces) != 0))
+      return false;
+  
+  ctx->data->fraction   = fraction;
+  ctx->data->last_split = BLAM_TAG_BLOCK_GET(ctx->bsp, struct blam_plane3d*, planes, plane_index);
+  ctx->data->surface.index             = surface_index;
+  ctx->data->surface.plane             = surface->plane;
+  ctx->data->surface.flags             = surface->flags;
+  ctx->data->surface.breakable_surface = surface->breakable_surface;
+  ctx->data->surface.material          = surface->material;
+  
+  return true;
+}
+
+blam_bool test_vector_context_try_commit_pending_result(
+  struct test_vector_context *ctx)
+{
+  assert(ctx);
+  
+  if (!ctx->ext.has_pending_result)
+    return false;
+  
+  return test_vector_context_try_commit_result(
+    ctx, 
+    ctx->ext.pending.fraction,
+    ctx->ext.pending.plane,
+    ctx->ext.pending.surface);
+}
+
 blam_bool collision_bsp_test_vector_node(
   struct test_vector_context *const ctx,
   const blam_index_long             root,
@@ -603,17 +658,18 @@ blam_bool collision_bsp_test_vector_node(
 /**
  * \brief Internal; common subroutine used in #collision_bsp_test_vector_leaf.
  *
- * If a surface was intersected by the test, it is recorded into \a ctx.
+ * It is assumed that, if \a splits_interior is \c false, then `ctx->plane` splits 
+ * BSP interior and exterior; `ctx->plane` is a solid partition within the extents 
+ * of the leaf.
  *
- * \param [in,out] ctx            The test context.
- * \param [in] leaf               The leaf being tested.
- * \param [in] fraction           The distance to the point of intersection with the 
- *                                leaf, as a fraction of `ctx->delta`.
- * \param [in] splits_interior    If \c true, the `ctx->plane` divides two BSP 
- *                                interior leaves.
- * \param [in] expect_closed      If \c true and an intersection occurs in this 
- *                                leaf, the surface intersected after this leaf 
- *                                is expected to be back-facing.
+ * \param [in,out] ctx         The test context.
+ * \param [in] leaf            The leaf being tested.
+ * \param [in] fraction        The distance to the point of intersection with the 
+ *                             leaf, as a fraction of `ctx->delta`.
+ * \param [in] splits_interior If \c true, the `ctx->plane` divides two BSP 
+ *                             interior leaves.
+ * \param [in] commit_result   If \c true, the surface found (if any) should be 
+ *                             committed or verified. 
  *
  * \return \c true if a surface was intersected, otherwise \c false.
  */
@@ -621,44 +677,80 @@ static
 bool collision_bsp_test_vector_leaf_visit_surface(
   struct test_vector_context *const ctx,
   const blam_index_long             leaf_index,
-  const blam_real                   fraction,
+  blam_real                         fraction,
   const bool                        splits_interior,
   
   // NON-VANILLA PARAMETERS
-  bool expect_closed)
+  bool commit_result)
 {
   if (leaf_index == -1)
       return false;
   
-  const blam_index_long surface_index = collision_bsp_search_leaf(
+  blam_index_long plane_index = ctx->plane;
+  blam_index_long surface_index = collision_bsp_search_leaf(
     ctx->bsp,
     ctx->breakable_surfaces,
     leaf_index,
-    ctx->plane,
+    plane_index,
     splits_interior,
     ctx->origin,
     ctx->delta,
-    fraction,
-    expect_closed);
+    fraction);
   
+  // true when a BSP leak is encountered on ctx->plane in this leaf
+  bool leak_encountered = !splits_interior && surface_index == -1;
+  
+  // TODO: MITIGATE BSP LEAK HERE
+  // if (leak_encountered)
+  //   ... update surface_index if a surface was found
+
+  // If there is a pending intersection result, reject it if a leak was encountered.
+  // The copied reassignment to leak_encountered is intentional, to keep the value 
+  // updated when BSP leak mitigations are in place.
+  leak_encountered = !splits_interior && surface_index == -1;
+  if (BLAM_UNLIKELY(leak_encountered && ctx->ext.has_pending_result))
+  {
+    ctx->ext.has_pending_result = false;
+  }
+  
+  const bool may_require_validation = !splits_interior;
   if (surface_index == -1)
-    return false;
+  {
+    // DO NOTHING
+  } else if (ctx->ext.has_pending_result)
+  {
+    // Pending result was confirmed by the current surface result.
+    // Replace the current result with the pending result.
+    fraction      = ctx->ext.pending.fraction;
+    plane_index   = ctx->ext.pending.plane;
+    surface_index = ctx->ext.pending.surface;
+  } else if (!commit_result)
+  {
+    // Discard this intersection.
+    surface_index = -1;
+  } else if (mitigate_phantom_bsp && may_require_validation) {
+    const bool validated = collision_surface_test3d(
+      ctx->bsp,
+      ctx->breakable_surfaces,
+      surface_index,
+      ctx->origin,
+      ctx->delta);
+    
+    if (!validated)
+    {
+      // Make this intersection result the pending result.
+      ctx->ext.pending.fraction = fraction;
+      ctx->ext.pending.plane    = plane_index;
+      ctx->ext.pending.surface  = surface_index;
+      surface_index = -1;
+    } else {
+      // NOTHING TO DO, SURFACE IS OK
+    }
+  } else {
+    // NOTHING TO DO, SURFACE IS OK
+  }
   
-  const struct blam_collision_surface *const surface = BLAM_TAG_BLOCK_GET(ctx->bsp, surface, surfaces, surface_index);
-  
-  if (((surface->flags & 0x02) != 0 && (ctx->flags & k_collision_test_ignore_invisible_surfaces) != 0)
-      || ((surface->flags & 0x08) != 0 && (ctx->flags & k_collision_test_ignore_breakable_surfaces) != 0))
-      return false;
-  
-  ctx->data->fraction   = fraction;
-  ctx->data->last_split = BLAM_TAG_BLOCK_GET(ctx->bsp, struct blam_plane3d*, planes, ctx->plane);
-  ctx->data->surface.index             = surface_index;
-  ctx->data->surface.plane             = surface->plane;
-  ctx->data->surface.flags             = surface->flags;
-  ctx->data->surface.breakable_surface = surface->breakable_surface;
-  ctx->data->surface.material          = surface->material;
-  
-  return true;
+  return test_vector_context_try_commit_result(ctx, fraction, plane_index, surface_index);
 }
 
 blam_bool collision_bsp_test_vector_leaf(
@@ -670,7 +762,14 @@ blam_bool collision_bsp_test_vector_leaf(
   BLAM_ASSUME(k_bsp_leaf_type_none <= leaf_type && leaf_type <= k_bsp_leaf_type_exterior);
   BLAM_ASSUME(k_bsp_leaf_type_none <= ctx->leaf_type && ctx->leaf_type <= k_bsp_leaf_type_exterior);
   
-  if ((ctx->flags & k_collision_test_front_facing_surfaces) != 0
+  const bool test_frontfacing = (ctx->flags & k_collision_test_front_facing_surfaces) != 0;
+  const bool test_backfacing  = (ctx->flags & k_collision_test_back_facing_surfaces) != 0;
+  
+  // PHANTOM BSP MITIGATIONS:
+  // If we are mitigating phantom BSP, then we need to test both front- and 
+  // back-facing surfaces to observe BSP leaks. The result is only committed if its 
+  // a surface the user actually desires to test.
+  if ((test_frontfacing || mitigate_phantom_bsp)
     && blam_bsp_leaf_type_interior(ctx->leaf_type)
     && leaf_type == k_bsp_leaf_type_exterior)
   {
@@ -678,17 +777,17 @@ blam_bool collision_bsp_test_vector_leaf(
     // Plane splits BSP interior at ctx->leaf from BSP exterior at leaf.
     const blam_index_long tested_leaf     = ctx->leaf;
     const bool            splits_interior = false;
-    const bool            expect_closed   = true; // surface after is backfacing
+    const bool            commit_result   = test_frontfacing;
     
     const bool result = collision_bsp_test_vector_leaf_visit_surface(
       ctx, 
       tested_leaf, 
       fraction, 
       splits_interior, 
-      expect_closed);
+      commit_result);
     if (BLAM_LIKELY(result))
       return true;
-  } else if ((ctx->flags & k_collision_test_back_facing_surfaces) != 0
+  } else if ((test_backfacing || mitigate_phantom_bsp)
     && ctx->leaf_type == k_bsp_leaf_type_exterior
     && blam_bsp_leaf_type_interior(leaf_type))
   {
@@ -696,14 +795,14 @@ blam_bool collision_bsp_test_vector_leaf(
     // Plane splits BSP exterior at ctx->leaf from BSP interior at leaf.
     const blam_index_long tested_leaf     = leaf;
     const bool            splits_interior = false;
-    const bool            expect_closed   = false; // surface after is frontfacing
+    const bool            commit_result   = test_backfacing;
     
     const bool result = collision_bsp_test_vector_leaf_visit_surface(
       ctx, 
       tested_leaf, 
       fraction, 
       splits_interior, 
-      expect_closed);
+      commit_result);
     if (BLAM_LIKELY(result))
       return true;
   } else if ((ctx->flags & k_collision_test_ignore_two_sided_surfaces) == 0
@@ -716,14 +815,14 @@ blam_bool collision_bsp_test_vector_leaf(
       = (ctx->flags & k_collision_test_front_facing_surfaces) != 0 ? ctx->leaf
                                                                    : leaf;
     const bool splits_interior = true;
-    const bool expect_closed   = false; // surface after is frontfacing
+    const bool commit_result   = true;
 
     const bool result = collision_bsp_test_vector_leaf_visit_surface(
       ctx, 
       tested_leaf, 
       fraction, 
       splits_interior, 
-      expect_closed);
+      commit_result);
     if (result)
       return true;
     // NOTE: Not a sealed-world violation; double-sided surface may be breakable.
