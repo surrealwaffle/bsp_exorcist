@@ -24,6 +24,7 @@ typedef struct blam_collision_bsp_test_vector_result test_vector_result;
  */
 struct test_vector_context_ext
 {
+  bool just_encountered_leak; ///< \c true if the last solid partition was a leak.
   bool has_pending_result;    ///< \c true if there is a #pending result.
   
   struct 
@@ -252,7 +253,8 @@ blam_bool blam_collision_bsp_test_vector(
     .plane              = -1,
     .ext                = 
     {
-      .has_pending_result = false
+      .just_encountered_leak = false,
+      .has_pending_result    = false,
     }
   };
   data->fraction     = fmaxf(max_scale, 0.0f); // Halo doesnt fully clamp here
@@ -556,9 +558,12 @@ blam_bool test_vector_context_try_commit_result(
     return false;
   
   const struct blam_collision_surface *const surface = BLAM_TAG_BLOCK_GET(ctx->bsp, surface, surfaces, surface_index);
-  if (((surface->flags & 0x02) != 0 && (ctx->flags & k_collision_test_ignore_invisible_surfaces) != 0)
-      || ((surface->flags & 0x08) != 0 && (ctx->flags & k_collision_test_ignore_breakable_surfaces) != 0))
-      return false;
+  
+  const bool test_invisible_surfaces = (ctx->flags & k_collision_test_ignore_invisible_surfaces) == 0;
+  const bool test_breakable_surfaces = (ctx->flags & k_collision_test_ignore_breakable_surfaces) == 0;
+  if (((surface->flags & 0x02) != 0 && !test_invisible_surfaces)
+    || ((surface->flags & 0x08) != 0 && !test_breakable_surfaces))
+    return false;
   
   ctx->data->fraction   = fraction;
   ctx->data->last_split = BLAM_TAG_BLOCK_GET(ctx->bsp, struct blam_plane3d*, planes, plane_index);
@@ -686,6 +691,9 @@ bool collision_bsp_test_vector_leaf_visit_surface(
   if (leaf_index == -1)
       return false;
   
+  // true if the vector is testing the front of the surface found (if any)
+  const bool frontfacing = blam_bsp_leaf_type_interior(ctx->leaf_type);
+  
   blam_index_long plane_index = ctx->plane;
   blam_index_long surface_index = collision_bsp_search_leaf(
     ctx->bsp,
@@ -736,7 +744,10 @@ bool collision_bsp_test_vector_leaf_visit_surface(
       ctx->origin,
       ctx->delta);
     
-    if (!validated)
+    if (validated)
+    {
+      // NOTHING TO DO, SURFACE IS OK
+    } else if (frontfacing)
     {
       // Make this intersection result the pending result.
       ctx->ext.pending.fraction = fraction;
@@ -744,12 +755,17 @@ bool collision_bsp_test_vector_leaf_visit_surface(
       ctx->ext.pending.surface  = surface_index;
       surface_index = -1;
     } else {
-      // NOTHING TO DO, SURFACE IS OK
+      // Potential phantom BSP surface is backfacing.
+      // In this case, we reject the result as phantom BSP if the last solid 
+      // partition was a leak.
+      if (ctx->ext.just_encountered_leak)
+        surface_index = -1;
     }
   } else {
     // NOTHING TO DO, SURFACE IS OK
   }
   
+  ctx->ext.just_encountered_leak = leak_encountered;
   return test_vector_context_try_commit_result(ctx, fraction, plane_index, surface_index);
 }
 
