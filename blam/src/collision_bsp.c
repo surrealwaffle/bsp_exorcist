@@ -4,7 +4,6 @@
 #include <assert.h>
 #include <math.h>
 
-#include "blam/collision_bsp_ext.h"
 #include "blam/math.h"
 #include "blam/tag.h"
 
@@ -300,51 +299,6 @@ bool collision_surface_broken(
       return true; // Surface is breakable and broken.
   
   return false;
-}
-
-/**
- * \brief Verifies a surface in the BSP on a given plane by testing the orientation
- *        of the next intersected surface.
- *
- * \param [in] bsp         The collision BSP to test again.
- * \param [in] plane_index The index of the plane of the surface to verify.
- * \param [in] origin      The vector starting point.
- * \param [in] delta       The vector endpoint, relative to \a origin.
- * \param [in] fraction    The distance to the test point, as a fraction of \a delta.
- * \param [in] expect_closed If \c true, the next intersected surface is to be 
- *                           backfacing, or frontfacing if supplied as \c false.
- *
- * \return \c false if the surface was rejected as phantom BSP, otherwise \c true.
- */
-static
-bool collision_surface_verify_bsp(
-  const collision_bsp   *bsp,
-  const blam_index_long  plane_index,
-  const blam_real3d     *origin,
-  const blam_real3d     *delta,
-  const blam_real        fraction,
-  const bool             expect_closed)
-{
-  const int next_surface_direction = blamext_collision_bsp_test_vector_next_surface_orientation(
-    bsp,
-    origin,
-    delta,
-    fraction,
-    plane_index);
-  
-  if (expect_closed)
-  {
-    // next surface (if any) is expected to be backfacing
-    if (next_surface_direction < 0)
-      return false; // next surface was frontfacing
-  } else
-  {
-    // next surface (if any) is expected to be frontfacing
-    if (next_surface_direction > 0)
-      return false;
-  }
-  
-  return true;
 }
 
 blam_index_long collision_bsp_search_leaf(
