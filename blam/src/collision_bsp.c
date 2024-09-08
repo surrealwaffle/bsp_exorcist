@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <math.h>
+#include <tgmath.h>
 
 #include "blam/math.h"
 #include "blam/tag.h"
@@ -256,7 +257,7 @@ blam_bool blam_collision_bsp_test_vector(
       .has_pending_result    = false,
     }
   };
-  data->fraction     = fmaxf(max_scale, 0.0f); // Halo doesnt fully clamp here
+  data->fraction     = fmax(max_scale, 0.0f); // Halo doesnt fully clamp here
   data->leaves.count = 0;
 
   const blam_index_long root = 0;
@@ -385,7 +386,7 @@ blam_index_long blam_bsp2d_search(
   while (root >= 0)
   {
     const struct blam_bsp2d_node *const node = BLAM_TAG_BLOCK_GET(bsp, node, nodes, root);
-    root = node->children[blam_plane2d_test(&node->plane, point) >= 0.0f];
+    root = node->children[blam_plane2d_test(&node->plane, point) >= 0.0];
   }
   
   const blam_index_long surface_index = blam_sanitize_long_s(root);
@@ -439,9 +440,9 @@ blam_bool collision_surface_test2d(
     const blam_real2d edge_delta  = blam_real2d_sub(&p1, &p0);
     
     // This is the way Halo performs this test, argument order preserved.
-    const blam_real determinant = blam_real2d_det(&point_delta, &edge_delta);
+    const blam_real_highp determinant = blam_real2d_det(&point_delta, &edge_delta);
     
-    if (determinant > 0.0f)
+    if (determinant > 0.0)
         return false; // point is outside of surface
     
     next_edge = blam_collision_edge_inorder_edge(edge, surface_index);
@@ -485,12 +486,11 @@ bool collision_surface_test3d(
     const struct blam_collision_edge *const edge = &edges[next_edge_index];
     const blam_index_long vertex_index           = blam_collision_edge_inorder_vertex_next(edge, surface_index);
     
-    const blam_real3d vertex     = blam_real3d_sub(&vertices[vertex_index].point, origin);
-    const blam_real3d edge_bivec = blam_real3d_cross(&last_vertex, &vertex);
-    const blam_real   volume     = blam_real3d_dot(delta, &edge_bivec);
+    const blam_real3d     vertex = blam_real3d_sub(&vertices[vertex_index].point, origin);
+    const blam_real_highp volume = blam_real3d_scalar_triple(delta, &last_vertex, &vertex);
     
-    all_signed   &= volume <= 0;
-    all_unsigned &= volume >= 0;
+    all_signed   &= volume <= 0.0;
+    all_unsigned &= volume >= 0.0;
     
     next_edge_index = blam_collision_edge_inorder_edge(edge, surface_index);
     last_vertex     = vertex;
@@ -567,12 +567,12 @@ blam_bool collision_bsp_test_vector_node(
   // If they land on different sides of the plane, then we may need to 
   // recurse down both sides of the tree.
   // Halo performs these tests in the following steps:
-  const blam_real test_origin   = blam_plane3d_test(plane, ctx->origin);
-  const blam_real dot_delta     = blam_real3d_dot(&plane->normal, ctx->delta);
-  const blam_real point_test    = test_origin + fraction * dot_delta;
-  const blam_real terminal_test = test_origin + terminal * dot_delta;
-  const bool any_before = (point_test < 0.0f) || (terminal_test < 0.0f);
-  const bool any_after  = (point_test >= 0.0f) || (terminal_test >= 0.0f);
+  const blam_real_highp test_origin   = blam_plane3d_test(plane, ctx->origin);
+  const blam_real_highp dot_delta     = blam_real3d_dot(&plane->normal, ctx->delta);
+  const blam_real_highp point_test    = test_origin + fraction * dot_delta;
+  const blam_real_highp terminal_test = test_origin + terminal * dot_delta;
+  const bool any_before = (point_test < 0.0) || (terminal_test < 0.0);
+  const bool any_after  = (point_test >= 0.0) || (terminal_test >= 0.0);
   
   if (!any_before || !any_after) {
     // The origin and terminal points are on the same side of the tree.
@@ -584,7 +584,7 @@ blam_bool collision_bsp_test_vector_node(
     // <n, delta> < 0 if and only if the point given by fraction is in front
     // of the plane (point_test >= 0).
     // This comparison is retained as is from Halo.
-    const bool plane_faces_forward = !(dot_delta >= 0.0f);
+    const bool plane_faces_forward = !(dot_delta >= 0.0);
     const blam_index_long first_child  = node->children[plane_faces_forward ? 1 : 0];
     const blam_index_long second_child = node->children[plane_faces_forward ? 0 : 1];
 
@@ -598,7 +598,7 @@ blam_bool collision_bsp_test_vector_node(
     // and terminal_fraction are on opposite sides of the plane.
     // If we manage to get here, then <n, delta> != 0.
     // We can therefore divide by <n, delta>.
-    const blam_real intersection = -(test_origin / dot_delta);
+    const blam_real intersection = -(blam_real)(test_origin / dot_delta);
     
     if (collision_bsp_test_vector_node(ctx, first_child, fraction, intersection)) {
       // Found an intersection in the first child subtree.
