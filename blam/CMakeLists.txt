@@ -8,7 +8,6 @@ add_library(blam
 target_include_directories(blam
     PUBLIC 
         include)
-set_target_properties(blam
-    PROPERTIES
-        C_STANDARD 11
-        C_STANDARD_REQUIRED ON)
+target_compile_features(blam
+    PUBLIC
+        c_std_11)
