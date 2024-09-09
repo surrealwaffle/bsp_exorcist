@@ -11,6 +11,17 @@ well under the assumption that phantom BSP and BSP holes are rare.
 Note: In-engine, Halo refers to rays in this context as vectors. To keep things 
 consistent, I'll use Halo's terminology here.
 
+In greater detail, `bsp_exorcist` follows the usual subroutine for finding a solid 
+surface in a leaf through a plane that partitions BSP interior from exterior 
+(`collision_bsp_search_leaf` in `blam/src/collision_bsp.c`). If such a surface is 
+found, it is validated by performing a vector-surface intersection test using the 
+scalar triple product. If this test indicates an intersection, the surface admitted.
+Otherwise, the vector does not intersect the surface, but outright rejecting the 
+surface can lead to some holes (see images in the writeup below). The surface is 
+only rejected when the next solid partition features a leak. For backfacing 
+potential phantom BSP, the order is reversed; the surface is rejected when the 
+previous solid partition features a leak.
+
 ## Build
 To build this project, a compiler that supports `C11` is required and involves the 
 usual `CMake` build process.
