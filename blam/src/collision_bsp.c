@@ -704,6 +704,7 @@ bool collision_bsp_test_vector_leaf_visit_surface(
     } else if (frontfacing)
     {
       // Make this intersection result the pending result.
+      ctx->ext.has_pending_result = true;
       ctx->ext.pending.fraction = fraction;
       ctx->ext.pending.plane    = plane_index;
       ctx->ext.pending.surface  = surface_index;
