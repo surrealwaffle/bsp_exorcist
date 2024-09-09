@@ -32,6 +32,9 @@ cd build
 cmake --build .
 ```
 
+The compiler must target an `x86` architecture. If your compiler does not do this 
+by default, then additional steps on your part will need to be taken.
+
 This builds `hlef.dll`, which applies the necessary patches upon being loaded in an 
 all-or-nothing fashion. The patches *should* work for both server and client 
 binaries.
