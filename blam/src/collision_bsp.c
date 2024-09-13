@@ -791,9 +791,6 @@ bool collision_bsp_test_vector_leaf_visit_surface(
   }
   ctx->ext.just_encountered_leak = leak_encountered;
   
-  if (!commit_result)
-    surface_index = -1;
-  
   return test_vector_context_try_commit_result(ctx, fraction, plane_index, surface_index);
 }
 
