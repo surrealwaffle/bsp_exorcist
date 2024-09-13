@@ -12,6 +12,7 @@
 // INTERNAL DECLARATIONS, STRUCTURES, ENUMS
 
 static bool mitigate_phantom_bsp = true;
+static bool mitigate_bsp_leaks = true;
 
 typedef struct blam_collision_bsp collision_bsp;
 typedef struct blam_bit_vector    bit_vector;
@@ -49,6 +50,14 @@ struct test_vector_context_ext
   } pending; ///< May hold an intersection result for verification.
              ///< The result is considered verified and accepted only when the 
              ///< solid partition that follows does not feature a leak.
+  
+  struct
+  {
+    blam_long       count;        ///< The number of nodes populating #stack.
+    blam_index_long stack[0x100]; ///< The stack of BSP node indices to get to the 
+                                  ///< current node, including the current node.
+                                  ///< If at a leaf, the leaf index is unsanitized.
+  } nodes;
 };
 
 /**
@@ -238,6 +247,61 @@ enum phantom_bsp_resolution_method get_phantom_bsp_resolution_method(
   bool            commit_result,
   blam_index_long surface_index);
 
+/**
+ * \brief Attempts to resolve a BSP leak (if any).
+ *
+ * If no resolution takes place or is needed, the return value is \c surface_index.
+ *
+ * \param [in] ctx             The test context.
+ * \param [in] leaf_index      The index of the leaf being tested.
+ * \param [in] fraction        The proportional (relative to `ctx->delta`) distance 
+ *                             to the point of intersection with the plane.
+ * \param [in] splits_interior If \c true, the intersected plane divides two BSP 
+ *                             interior leaves.
+ * \param [in] surface_index   The index of the current intersected surface.
+ *
+ * \return The index of the resolved surface.
+ */
+static 
+blam_index_long try_resolve_bsp_leak(
+  const struct test_vector_context *ctx,
+  blam_index_long leaf_index,
+  blam_real       fraction,
+  bool            splits_interior,
+  blam_index_long surface_index);
+
+static
+blam_index_long test_vector_context_ext_push_node(
+  struct test_vector_context *ctx,
+  blam_index_long node_index)
+{
+  if (ctx->ext.nodes.count >= 0x100)
+    return 0x100;
+  
+  const blam_index_long handle = ctx->ext.nodes.count;
+  ctx->ext.nodes.stack[ctx->ext.nodes.count++] = node_index;
+  return handle;
+}
+
+static
+void test_vector_context_ext_pop_node(
+  struct test_vector_context *ctx,
+  blam_index_long handle)
+{
+  ctx->ext.nodes.count = handle;
+}
+
+static
+void test_vector_context_ext_restore_node(
+  struct test_vector_context *ctx,
+  blam_index_long node_index,
+  blam_index_long handle)
+{
+  test_vector_context_ext_pop_node(ctx, handle);
+  const blam_index_long new_handle = test_vector_context_ext_push_node(ctx, node_index);
+  assert(handle == new_handle);
+}
+
 // -----------------------------------------------------------------------------
 // EXPOSED API
 
@@ -350,10 +414,8 @@ blam_index_long collision_bsp_search_leaf(
   assert(bsp);
   assert(origin);
   assert(delta);
-  
-  blam_real3d terminal = *delta;
-  blam_real3d_scale(fraction, &terminal);
-  terminal = blam_real3d_add(origin, &terminal);
+
+  const blam_real3d terminal = blam_real3d_from_implicit(origin, delta, fraction);
   
   typedef struct blam_bsp3d_leaf      leaf_type;
   typedef struct blam_bsp2d_reference reference_type;
@@ -439,6 +501,9 @@ blam_bool collision_surface_test2d(
   assert(point);
   assert(bsp);
   
+  if (surface_index == -1)
+    return false; // Halo doesn't check. But this is for my sanity.
+  
   if (collision_surface_broken(bsp, breakable_surfaces, surface_index))
     return false; // Surface is broken; cannot hit
   
@@ -495,6 +560,9 @@ bool collision_surface_test3d(
 {
   assert(origin);
   assert(delta);
+  
+  if (surface_index == -1)
+    return false; // Halo doesn't check. But this is for my sanity.
   
   const struct blam_collision_surface *const surface  = BLAM_TAG_BLOCK_GET(bsp, surface, surfaces, surface_index);
   const struct blam_collision_vertex* const  vertices = BLAM_TAG_BLOCK_BASE(bsp, vertices, vertices);
@@ -602,6 +670,87 @@ enum phantom_bsp_resolution_method get_phantom_bsp_resolution_method(
   return k_resolution_method_proceed;
 }
 
+blam_index_long try_resolve_bsp_leak(
+  const struct test_vector_context *ctx,
+  blam_index_long leaf_index,
+  blam_real       fraction,
+  bool            splits_interior,
+  blam_index_long surface_index)
+{
+  assert(ctx);
+  assert(leaf_index != -1);
+  
+  if (!mitigate_bsp_leaks)
+    return surface_index; // not mitigating leaks
+  else if (surface_index != -1)
+    return surface_index; // the surface is already resolved
+  else if (splits_interior)
+    return surface_index; // no surface, but thats a valid result for interior split
+  
+  // We have a leak! 
+  // Strategy to resolve BSP leak:
+  //  Traverse up to the root node.
+  //  If any node along the way has a splitting plane that is nearly coplanar with 
+  //  ctx->plane, determine the leaf that would be on the other side of that plane.
+  //  For each such leaf, search the references for a BSP2D associated with 
+  //  ctx->plane. Search these BSP2Ds for a surface and verify the surface with a 
+  //  3D surface test.
+  
+  const blam_index_long *const stack = ctx->ext.nodes.stack;
+  const blam_index_long stack_size = ctx->ext.nodes.count;
+  assert(stack_size > 0); // the leaf node is in here at the top of the stack
+  
+  typedef struct blam_bsp3d_node node_type;
+  typedef struct blam_plane3d    plane_type;
+  const node_type  *const nodes  = BLAM_TAG_BLOCK_BASE(ctx->bsp, nodes,  bsp3d_nodes);
+  const plane_type *const planes = BLAM_TAG_BLOCK_BASE(ctx->bsp, planes, planes);
+  
+  const plane_type *plane = &planes[ctx->plane];
+  const blam_real3d intersection = blam_real3d_from_implicit(ctx->origin, ctx->delta, fraction);
+  for (const blam_index_long *it = stack + stack_size - 1; it != stack; --it)
+  {
+    const blam_index_long child_index = *it;
+    const blam_index_long root_index = *(it - 1);
+    
+    const node_type *const root = &nodes[root_index];
+    const plane_type *const root_plane = &planes[root->plane];    
+    
+    if (!blam_plane3d_test_nearly_coplanar(plane, root_plane))
+       continue;
+    
+    // Search th
+    const blam_index_long other_child_index = root->children[root->children[0] == child_index ? 1 : 0];
+    const blam_index_long candidate_leaf_index = blam_collision_bsp_search(
+      ctx->bsp,
+      other_child_index,
+      &intersection);
+    
+    if (candidate_leaf_index == -1)
+      break; // If we search from higher up the tree, we get the same leaf.
+    
+    // Search for a surface in this candidate leaf associated with plane_index.
+    const blam_index_long candidate_surface_index = collision_bsp_search_leaf(
+      ctx->bsp,
+      ctx->breakable_surfaces,
+      candidate_leaf_index,
+      root->plane,
+      splits_interior,
+      ctx->origin,
+      ctx->delta,
+      fraction);
+    if (candidate_surface_index == -1)
+      break;
+    
+    // Verify that we have good surface here.
+    if (collision_surface_test3d(ctx->bsp, ctx->breakable_surfaces, candidate_surface_index, ctx->origin, ctx->delta))
+      return candidate_surface_index;
+    else
+      break; // If we search from higher up the tree, we probably get the same leaf.
+  }
+  
+  return surface_index; // no candidate verified
+}
+
 blam_bool test_vector_context_try_commit_result(
   struct test_vector_context *ctx,
   blam_real       fraction,
@@ -654,6 +803,9 @@ blam_bool collision_bsp_test_vector_node(
   const blam_real                   fraction,
   const blam_real                   terminal)
 {
+  // NOTE: Although we should 'pop' before returning, we don't strictly need to.
+  //       Restoring to handle before a recursive call is sufficient.
+  const blam_index_long handle = test_vector_context_ext_push_node(ctx, root);
   if (BLAM_UNLIKELY(root < 0))
   {
     const blam_index_long leaf = blam_sanitize_long_s(root);
@@ -712,6 +864,7 @@ blam_bool collision_bsp_test_vector_node(
     } else {
       // Continue to test along the second child subtree.
       ctx->plane = node->plane;
+      test_vector_context_ext_restore_node(ctx, root, handle);
       return collision_bsp_test_vector_node(ctx, second_child, intersection, terminal);
     }
   }
@@ -759,7 +912,7 @@ bool collision_bsp_test_vector_leaf_visit_surface(
     ctx->delta,
     fraction);
    
-  // TODO: MITIGATE BSP LEAK HERE
+  surface_index = try_resolve_bsp_leak(ctx, leaf_index, fraction, splits_interior, surface_index);
   
   const bool leak_encountered = !splits_interior && surface_index == -1;
   switch (get_phantom_bsp_resolution_method(ctx, splits_interior, commit_result, surface_index))
