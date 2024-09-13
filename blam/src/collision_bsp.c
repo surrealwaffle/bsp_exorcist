@@ -17,6 +17,20 @@ typedef struct blam_collision_bsp collision_bsp;
 typedef struct blam_bit_vector    bit_vector;
 typedef struct blam_collision_bsp_test_vector_result test_vector_result;
 
+enum phantom_bsp_resolution_method
+{
+  k_resolution_method_proceed,        ///< The user should proceed as if no phantom 
+                                      ///< BSP was detected.
+  k_resolution_method_reject_current, ///< The user should reject the current 
+                                      ///< surface.
+  k_resolution_method_make_pending,   ///< The user should make the current surface 
+                                      ///< the pending surface.
+  k_resolution_method_accept_pending, ///< The user should accept the pending 
+                                      ///< surface.
+  k_resolution_method_reject_pending, ///< The user should reject the pending 
+                                      ///< surface.
+};
+
 /**
  * \brief Manages additional, non-vanilla state for BSP-vector intersection tests.
  *
@@ -202,6 +216,27 @@ bool collision_surface_test3d(
   blam_index_long      surface_index,
   const blam_real3d   *origin,
   const blam_real3d   *delta);  
+
+/**
+ * \brief Determines the resolution action to take in order to resolve phantom BSP.
+ *
+ * This function should be called for every solid plane intersected, using the
+ * surface resulting from that intersection (in order).
+ * 
+ * \param [in] ctx             The test context.
+ * \param [in] splits_interior If \c true, the intersected plane divides two BSP 
+ *                             interior leaves.
+ * \param [in] commit_result   If \c true, the caller intends to commit the current
+ *                             surface intersection (if any).
+ * \param [in] surface_index   The index of the current intersected surface.
+ *                             If `-1`, there was no intersected surface.
+ */ 
+static
+enum phantom_bsp_resolution_method get_phantom_bsp_resolution_method(
+  const struct test_vector_context *ctx,
+  bool            splits_interior,
+  bool            commit_result,
+  blam_index_long surface_index);
 
 // -----------------------------------------------------------------------------
 // EXPOSED API
@@ -499,6 +534,74 @@ bool collision_surface_test3d(
   return all_signed || all_unsigned;
 }
 
+enum phantom_bsp_resolution_method get_phantom_bsp_resolution_method(
+  const struct test_vector_context *ctx,
+  bool            splits_interior,
+  bool            commit_result,
+  blam_index_long surface_index)
+{
+  // Strategy: Observe that phantom BSP must be followed by a BSP leak.
+  //           Therefore, if a surface is suspected to be phantom BSP, it can be 
+  //           rejected as phantom BSP when proceeded by a BSP leak.
+  //           On the other hand, for backfacing phantom BSP, the leak will come 
+  //           first. This requires a bit of finesse to manage.
+  const bool leak_encountered       = !splits_interior && surface_index == -1;
+  const bool may_require_validation = !splits_interior;
+  const bool has_pending_result     = ctx->ext.has_pending_result;  
+  if (surface_index == -1) 
+  {
+    // If there is a pending result, leak confirms that it is phantom BSP, so 
+    // reject it. Otherwise, proceed as usual.
+    if (leak_encountered && has_pending_result)
+      return k_resolution_method_reject_pending;
+    else
+      return k_resolution_method_proceed;
+  } else if (has_pending_result) 
+  {
+    // The current surface is a witness to the validity of the pending surface.
+    return k_resolution_method_accept_pending;
+  } else if (!commit_result) 
+  {
+    // User was not interested in this surface, so stop here.
+    return k_resolution_method_proceed;
+  } else if (!mitigate_phantom_bsp || !may_require_validation) 
+  {
+    // Phantom BSP mitigations are off or validation is not required for this 
+    // surface, so stop here.
+    return k_resolution_method_proceed;
+  }
+  
+  const bool validated = collision_surface_test3d(
+    ctx->bsp,
+    ctx->breakable_surfaces,
+    surface_index,
+    ctx->origin,
+    ctx->delta);
+  
+  if (validated)
+  {
+    // Quick test demonstrated that the surface is valid. Proceed as normal.
+    return k_resolution_method_proceed; 
+  }
+  
+  const bool frontfacing = blam_bsp_leaf_type_interior(ctx->leaf_type);
+  if (frontfacing)
+  {
+    // The quick test failed and the surface is frontfacing.
+    // The surface may be phantom BSP.
+    return k_resolution_method_make_pending; 
+  } 
+  else if (ctx->ext.just_encountered_leak)
+  {
+    // The surface is backfacing and we have evidence that it is phantom BSP.
+    // Reject the surface.
+    return k_resolution_method_reject_current; 
+  }
+  
+  // Surface could not be rejected.
+  return k_resolution_method_proceed;
+}
+
 blam_bool test_vector_context_try_commit_result(
   struct test_vector_context *ctx,
   blam_real       fraction,
@@ -645,9 +748,6 @@ bool collision_bsp_test_vector_leaf_visit_surface(
   if (leaf_index == -1)
       return false;
   
-  // true if the vector is testing the front of the surface found (if any)
-  const bool frontfacing = blam_bsp_leaf_type_interior(ctx->leaf_type);
-  
   blam_index_long plane_index = ctx->plane;
   blam_index_long surface_index = collision_bsp_search_leaf(
     ctx->bsp,
@@ -658,69 +758,39 @@ bool collision_bsp_test_vector_leaf_visit_surface(
     ctx->origin,
     ctx->delta,
     fraction);
-  
-  // true when a BSP leak is encountered on ctx->plane in this leaf
-  bool leak_encountered = !splits_interior && surface_index == -1;
-  
+   
   // TODO: MITIGATE BSP LEAK HERE
-  // if (leak_encountered)
-  //   ... update surface_index if a surface was found
-
-  // If there is a pending intersection result, reject it if a leak was encountered.
-  // The copied reassignment to leak_encountered is intentional, to keep the value 
-  // updated when BSP leak mitigations are in place.
-  leak_encountered = !splits_interior && surface_index == -1;
-  if (BLAM_UNLIKELY(leak_encountered && ctx->ext.has_pending_result))
-  {
-    ctx->ext.has_pending_result = false;
-  }
   
-  const bool may_require_validation = !splits_interior;
-  if (surface_index == -1)
+  const bool leak_encountered = !splits_interior && surface_index == -1;
+  switch (get_phantom_bsp_resolution_method(ctx, splits_interior, commit_result, surface_index))
   {
-    // DO NOTHING
-  } else if (ctx->ext.has_pending_result)
-  {
-    // Pending result was confirmed by the current surface result.
-    // Replace the current result with the pending result.
+  case k_resolution_method_reject_current:
+    surface_index = -1;
+    break;
+  
+  case k_resolution_method_make_pending:
+    ctx->ext.has_pending_result = true;
+    ctx->ext.pending.fraction   = fraction;
+    ctx->ext.pending.plane      = plane_index;
+    ctx->ext.pending.surface    = surface_index;
+    surface_index = -1;
+    break;
+  
+  case k_resolution_method_accept_pending:
     fraction      = ctx->ext.pending.fraction;
     plane_index   = ctx->ext.pending.plane;
     surface_index = ctx->ext.pending.surface;
-  } else if (!commit_result)
-  {
-    // Discard this intersection.
-    surface_index = -1;
-  } else if (mitigate_phantom_bsp && may_require_validation) {
-    const bool validated = collision_surface_test3d(
-      ctx->bsp,
-      ctx->breakable_surfaces,
-      surface_index,
-      ctx->origin,
-      ctx->delta);
-    
-    if (validated)
-    {
-      // NOTHING TO DO, SURFACE IS OK
-    } else if (frontfacing)
-    {
-      // Make this intersection result the pending result.
-      ctx->ext.has_pending_result = true;
-      ctx->ext.pending.fraction = fraction;
-      ctx->ext.pending.plane    = plane_index;
-      ctx->ext.pending.surface  = surface_index;
-      surface_index = -1;
-    } else {
-      // Potential phantom BSP surface is backfacing.
-      // In this case, we reject the result as phantom BSP if the last solid 
-      // partition was a leak.
-      if (ctx->ext.just_encountered_leak)
-        surface_index = -1;
-    }
-  } else {
-    // NOTHING TO DO, SURFACE IS OK
-  }
+    ctx->ext.has_pending_result = false;
+    break;
   
+  case k_resolution_method_reject_pending:
+    ctx->ext.has_pending_result = false;  
+    // PASSTHROUGH OK
+  case k_resolution_method_proceed:
+    break;
+  }
   ctx->ext.just_encountered_leak = leak_encountered;
+  
   return test_vector_context_try_commit_result(ctx, fraction, plane_index, surface_index);
 }
 
