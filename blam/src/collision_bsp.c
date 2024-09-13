@@ -631,7 +631,7 @@ enum phantom_bsp_resolution_method get_phantom_bsp_resolution_method(
   } else if (!commit_result) 
   {
     // User was not interested in this surface, so stop here.
-    return k_resolution_method_proceed;
+    return k_resolution_method_reject_current;
   } else if (!mitigate_phantom_bsp || !may_require_validation) 
   {
     // Phantom BSP mitigations are off or validation is not required for this 
@@ -943,6 +943,9 @@ bool collision_bsp_test_vector_leaf_visit_surface(
     break;
   }
   ctx->ext.just_encountered_leak = leak_encountered;
+  
+  if (!commit_result)
+    surface_index = -1;
   
   return test_vector_context_try_commit_result(ctx, fraction, plane_index, surface_index);
 }
