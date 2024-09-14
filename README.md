@@ -136,7 +136,7 @@ below it. To put it another way, there is a volume that exists outside of the
 volume enclosed by the map geometry that bridges two apparently non-adjacent leaves.
 
 To summarize, there are three forms of BSP leaks that I have encountered:
- * Form 1 BSP leaks occur when the leaf has a BSP2D reference associated with the correct surface, but the traversal algorithm is under the wrong plane;
+ * Form 1 BSP leaks occur when the leaf has a BSP2D reference associated with the correct surface, but the traversal algorithm is looking under the wrong plane;
  * Form 2 BSP leaks occur when the leaf does not have a BSP2D reference associated with the correct surface, and the traversal algorithm may or may not have the wrong plane;
  * Form 3 BSP leaks appear to be some sort of super leak that occurs when two non-adjacent leaves are somehow bridged.
 
