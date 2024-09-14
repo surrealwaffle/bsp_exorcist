@@ -126,14 +126,26 @@ subroutine will find no BSP2D reference in this leaf associated with `plane #45`
 and thus no intersection takes place. Distressingly, there is no BSP2D referenced 
 in this leaf whose associated plane is even loosely coplanar with `plane #45`.
 
-BSP leaks are easily detected, but difficult to mitigate due to the expense of 
-needing to search for all the BSP2D references associated with a plane of interest. 
-One could do some precomputation for a relevant multimap structure, but implementing
-it in this way would require a mechanism to recalculate these structure on map load.
+In fact, the traversal algorithm might not even be looking for `plane #45`, but a 
+different plane that is nearly coplanar with `plane #45`.
+
+To complicate matters, the BSP leak on Prisoner is an entirely different beast that 
+I have trouble properly classifying. As far as I can tell, Prisoner's leak 
+occurs because `tool` has generated a tunnel from the ladder to the ramp entrance 
+below it. To put it another way, there is a volume that exists outside of the 
+volume enclosed by the map geometry that bridges two apparently non-adjacent leaves.
+
+To summarize, there are three forms of BSP leaks that I have encountered:
+ * Form 1 BSP leaks occur when the leaf has a BSP2D reference associated with the correct surface, but the traversal algorithm is under the wrong plane;
+ * Form 2 BSP leaks occur when the leaf does not have a BSP2D reference associated with the correct surface, and the traversal algorithm may or may not have the wrong plane;
+ * Form 3 BSP leaks appear to be some sort of super leak that occurs when two non-adjacent leaves are somehow bridged.
+
+Form 1 and 2 BSP leaks are trivially detected, but form 3 BSP leaks are quite 
+sinister in that the leaking behaviour is consistent with valid formations in the 
+tree. 
 
 ## TODOs
  * MSVC build support
  * Reverse `collision_debug_phantom_bsp` to determine how Sapien detects phantom BSP
  * Convert to C++ (maybe)
- * Mitigate BSP leaks
  * Provide APIs to control mitigation behaviour
