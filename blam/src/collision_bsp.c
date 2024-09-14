@@ -1,6 +1,8 @@
 #include "blam/collision_bsp.h"
 
 #include <stdbool.h>
+
+#include <string.h>
 #include <assert.h>
 #include <math.h>
 #include <tgmath.h>
@@ -57,7 +59,8 @@ struct test_vector_context_ext
     blam_index_long stack[0x100]; ///< The stack of BSP node indices to get to the 
                                   ///< current node, including the current node.
                                   ///< If at a leaf, the leaf index is unsanitized.
-  } nodes;
+  } nodes       ///< The stack of nodes to the current leaf (may be exterior).
+  , leaf_nodes; ///< The stack of nodes to the current or previous interior leaf.
 };
 
 /**
@@ -686,26 +689,59 @@ blam_index_long try_resolve_bsp_leak(
     return surface_index; // the surface is already resolved
   else if (splits_interior)
     return surface_index; // no surface, but thats a valid result for interior split
-  
-  // We have a leak! 
-  // Strategy to resolve BSP leak:
-  //  Traverse up to the root node.
-  //  If any node along the way has a splitting plane that is nearly coplanar with 
-  //  ctx->plane, determine the leaf that would be on the other side of that plane.
-  //  For each such leaf, search the references for a BSP2D associated with 
-  //  ctx->plane. Search these BSP2Ds for a surface and verify the surface with a 
-  //  3D surface test.
-  
-  const blam_index_long *const stack = ctx->ext.nodes.stack;
-  const blam_index_long stack_size = ctx->ext.nodes.count;
-  assert(stack_size > 0); // the leaf node is in here at the top of the stack
+ 
+  const blam_index_long *stack = ctx->ext.leaf_nodes.stack;
+  blam_index_long stack_size   = ctx->ext.leaf_nodes.count;
+  assert(stack_size > 0); // includes the leaf
   
   typedef struct blam_bsp3d_node node_type;
   typedef struct blam_plane3d    plane_type;
   const node_type  *const nodes  = BLAM_TAG_BLOCK_BASE(ctx->bsp, nodes,  bsp3d_nodes);
   const plane_type *const planes = BLAM_TAG_BLOCK_BASE(ctx->bsp, planes, planes);
-  
   const plane_type *plane = &planes[ctx->plane];
+  
+  // FORM 1 BSP LEAK: There is a BSP2D reference in this leaf associated with the 
+  //                  surface hit, but ctx->plane is incorrect. Typically, the 
+  //                  correct plane is up the path to the BSP root, so simply look 
+  //                  for a plane that is nearly coplanar with ctx->plane.
+  for (const blam_index_long *it = stack + stack_size - 1; it != stack; --it)
+  {
+    const blam_index_long node_index = *it;
+    if (node_index < 0)
+      continue; // leaf
+    
+    const node_type *const root = &nodes[node_index];
+    if (root->plane == ctx->plane)
+      continue;
+    
+    const plane_type *const root_plane = &planes[root->plane];
+    if (!blam_plane3d_test_nearly_coplanar(plane, root_plane))
+      continue;
+    
+    // try to search the leaf at leaf_index for root->plane instead
+    const blam_index_long candidate_surface_index = collision_bsp_search_leaf(
+      ctx->bsp,
+      ctx->breakable_surfaces,
+      leaf_index,
+      root->plane,
+      splits_interior,
+      ctx->origin,
+      ctx->delta,
+      fraction);
+    
+    if (collision_surface_test3d(ctx->bsp, ctx->breakable_surfaces, candidate_surface_index, ctx->origin, ctx->delta))
+      return candidate_surface_index;
+  }
+  
+  // FORM 2 BSP LEAK: The leaf we're looking for is down another part of the tree.
+  //                  Typically, this means that ctx->plane is also incorrect.
+  //                  The resolution involves locating a nearly-coplanar split 
+  //                  as before, and then find out which leaf is on the other side 
+  //                  of that split. 
+  stack      = ctx->ext.nodes.stack;
+  stack_size = ctx->ext.nodes.count;
+  assert(stack_size > 0); // includes the leaf
+  
   const blam_real3d intersection = blam_real3d_from_implicit(ctx->origin, ctx->delta, fraction);
   for (const blam_index_long *it = stack + stack_size - 1; it != stack; --it)
   {
@@ -718,7 +754,6 @@ blam_index_long try_resolve_bsp_leak(
     if (!blam_plane3d_test_nearly_coplanar(plane, root_plane))
        continue;
     
-    // Search th
     const blam_index_long other_child_index = root->children[root->children[0] == child_index ? 1 : 0];
     const blam_index_long candidate_leaf_index = blam_collision_bsp_search(
       ctx->bsp,
@@ -728,8 +763,8 @@ blam_index_long try_resolve_bsp_leak(
     if (candidate_leaf_index == -1)
       break; // If we search from higher up the tree, we get the same leaf.
     
-    // Search for a surface in this candidate leaf associated with plane_index.
-    const blam_index_long candidate_surface_index = collision_bsp_search_leaf(
+    // Search for a surface in this candidate leaf associated with root->plane.
+    blam_index_long candidate_surface_index = collision_bsp_search_leaf(
       ctx->bsp,
       ctx->breakable_surfaces,
       candidate_leaf_index,
@@ -739,13 +774,24 @@ blam_index_long try_resolve_bsp_leak(
       ctx->delta,
       fraction);
     if (candidate_surface_index == -1)
-      break;
+    {
+      // Try again, but with ctx->plane instead.
+      candidate_surface_index = collision_bsp_search_leaf(
+        ctx->bsp,
+        ctx->breakable_surfaces,
+        candidate_leaf_index,
+        ctx->plane,
+        splits_interior,
+        ctx->origin,
+        ctx->delta,
+        fraction);
+    }
     
     // Verify that we have good surface here.
     if (collision_surface_test3d(ctx->bsp, ctx->breakable_surfaces, candidate_surface_index, ctx->origin, ctx->delta))
       return candidate_surface_index;
     else
-      break; // If we search from higher up the tree, we probably get the same leaf.
+      break; // If we search from higher up the tree, we get the same leaf.
   }
   
   return surface_index; // no candidate verified
@@ -958,6 +1004,13 @@ blam_bool collision_bsp_test_vector_leaf(
   
   const bool test_frontfacing = (ctx->flags & k_collision_test_front_facing_surfaces) != 0;
   const bool test_backfacing  = (ctx->flags & k_collision_test_back_facing_surfaces) != 0;
+  
+  if (leaf != -1)
+  {
+    const blam_index_long count = ctx->ext.nodes.count;
+    ctx->ext.leaf_nodes.count = count;
+    memcpy(ctx->ext.leaf_nodes.stack, ctx->ext.nodes.stack, count * sizeof(ctx->ext.leaf_nodes.stack[0]));
+  }
   
   // PHANTOM BSP MITIGATIONS:
   // If we are mitigating phantom BSP, then we need to test both front- and 

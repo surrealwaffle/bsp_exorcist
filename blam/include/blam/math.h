@@ -381,11 +381,11 @@ blam_bool blam_plane3d_test_nearly_coplanar(
   double qd = q->d;
   
   const blam_real_highp normal_cos = blam_real3d_dot(&p->normal, &q->normal);
-  if (fabs(normal_cos) < 0.99) // Just a magic constant I pulled from nowhere. See TODO above.
+  if (fabs(normal_cos) < 0.95) // Just a magic constant I pulled from nowhere. See TODO above.
     return false;
   
   pd = normal_cos < 0.0 ? -pd : pd;
-  if (fabs(pd - qd) > 0.01) // See above.
+  if (fabs(pd - qd) > 0.025) // See above.
     return false;
   
   return true;
