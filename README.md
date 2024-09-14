@@ -37,9 +37,17 @@ by default, then additional steps on your part will need to be taken.
 
 This builds `hlef.dll`, which applies the necessary patches upon being loaded in an 
 all-or-nothing fashion. The patches *should* work for both server and client 
-binaries.
+binaries. 
 
-Users will need some way to load this library. This exercise is left to the reader.
+This project currently does not support MSVC. If you manage to build `bsp_exorcist` 
+with MSVC and the patches do not introduce instability, please submit a pull 
+request. In the meantime, you can grab a release build.
+
+## Installation
+Users will need some way to load this library. There are a few ways this can be 
+done, depending on your circumstances:
+ * for `chimera` users, create a `mods` folder in Halo's installation subdirectory, then copy `hlef.dll` to it;
+ * for `sapp` users, copy `hlef.dll` to the same directory as `sapp.dll` and add (this script)[/lua/bsp_exorcist.lua] to your configuration.
 
 # Writeup
 This section will document how Halo represents and traverses BSP structures, and why
@@ -145,7 +153,6 @@ sinister in that the leaking behaviour is consistent with valid formations in th
 tree. 
 
 ## TODOs
- * MSVC build support
  * Reverse `collision_debug_phantom_bsp` to determine how Sapien detects phantom BSP
  * Convert to C++ (maybe)
  * Provide APIs to control mitigation behaviour
