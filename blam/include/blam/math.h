@@ -201,6 +201,20 @@ blam_real2d blam_real2d_sub(const blam_real2d *u, const blam_real2d *v)
 }
 
 /**
+ * \brief Returns the sum of \a delta scaled by \a proportion and \a origin.
+ */
+static inline
+blam_real3d blam_real3d_from_implicit(
+  const blam_real3d *origin,
+  const blam_real3d *delta,
+  const blam_real    proportion)
+{
+  blam_real3d result = *delta;
+  blam_real3d_scale(proportion, &result);
+  return blam_real3d_add(origin, &result);
+}
+
+/**
  * \brief Returns the vector product between \a u and \a v.
  */
 static inline
@@ -351,6 +365,30 @@ blam_real2d blam_real3d_projected_components(
   blam_real2d result = {{v->components[i.first], v->components[i.second]}};
   
   return result;
+}
+
+/**
+ * \brief Returns \c true if two planes are nearly coplanar, otherwise \c false.
+ */
+static inline
+blam_bool blam_plane3d_test_nearly_coplanar(
+  const blam_plane3d *p,
+  const blam_plane3d *q)
+{
+  // TODO: If someone can find this function in tool for me, point me to it so I 
+  //       can replicate it here.
+  double pd = p->d;
+  double qd = q->d;
+  
+  const blam_real_highp normal_cos = blam_real3d_dot(&p->normal, &q->normal);
+  if (fabs(normal_cos) < 0.95) // Just a magic constant I pulled from nowhere. See TODO above.
+    return false;
+  
+  pd = normal_cos < 0.0 ? -pd : pd;
+  if (fabs(pd - qd) > 0.025) // See above.
+    return false;
+  
+  return true;
 }
 
 #endif // BLAM_MATH_H
