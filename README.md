@@ -1,12 +1,13 @@
 # bsp_exorcist
-Phantom BSP mitigations for Halo PC (Retail and Custom Edition) servers and clients.
+Runtime phantom BSP and BSP leak patches for Halo PC (Retail and Custom Edition) 
+servers and clients.
 
 ## Technique
 `bsp_exorcist` provides a replacement subroutine for `collision_bsp_test_vector` 
 that provides mitigations for phantom BSP. The mitigation consists of a quick test 
 which admits most real surfaces, followed by a second, more expensive test which 
 admits real surfaces and rejects most forms of phantom BSP. This technique works 
-well under the assumption that phantom BSP and BSP holes are rare.
+well under the assumption that phantom BSP and BSP leaks are rare.
 
 Note: In-engine, Halo refers to rays in this context as vectors. To keep things 
 consistent, I'll use Halo's terminology here.
@@ -15,12 +16,18 @@ In greater detail, `bsp_exorcist` follows the usual subroutine for finding a sol
 surface in a leaf through a plane that partitions BSP interior from exterior 
 (`collision_bsp_search_leaf` in `blam/src/collision_bsp.c`). If such a surface is 
 found, it is validated by performing a vector-surface intersection test using the 
-scalar triple product. If this test indicates an intersection, the surface admitted.
-Otherwise, the vector does not intersect the surface, but outright rejecting the 
-surface can lead to some holes (see images in the writeup below). The surface is 
-only rejected when the next solid partition features a leak. For backfacing 
-potential phantom BSP, the order is reversed; the surface is rejected when the 
-previous solid partition features a leak.
+scalar triple product. If this test indicates an intersection, the surface is 
+admitted. Otherwise, the vector does not intersect the surface, but outright 
+rejecting the surface can lead to some holes (see images in the writeup below). The 
+surface is only rejected when the next solid partition features a leak. For 
+backfacing potential phantom BSP, the order is reversed; the surface is rejected 
+when the previous solid partition features a leak.
+
+To mitigate BSP leaks, the process is a bit more involved because the ecosystem of 
+BSP leaks is quite diverse. For the easily detected variants, the mitigation 
+consists of searching the leaf for a viable candidate. Should this fail, adjacent 
+leaves may be searched using a heuristic for a viable candidate. If this fails, the 
+conservative approach is taken and the leak is allowed to occur. 
 
 ## Build
 To build this project, a compiler that supports `C11` is required and involves the 
