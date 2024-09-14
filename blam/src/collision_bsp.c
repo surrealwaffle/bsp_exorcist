@@ -14,7 +14,7 @@
 // INTERNAL DECLARATIONS, STRUCTURES, ENUMS
 
 static bool mitigate_phantom_bsp = true;
-static bool mitigate_bsp_leaks = true;
+static bool mitigate_bsp_leaks   = true;
 
 typedef struct blam_collision_bsp collision_bsp;
 typedef struct blam_bit_vector    bit_vector;
@@ -931,6 +931,9 @@ blam_bool collision_bsp_test_vector_node(
  *                             interior leaves.
  * \param [in] commit_result   If \c true, the surface found (if any) should be 
  *                             committed or verified. 
+ * \param [in] verify_surface  If \c true, the surface must pass a verification
+ *                             check against the tested vector. Additionally, 
+ *                             phantom BSP mitigations are replaced by this test.
  *
  * \return \c true if a surface was intersected, otherwise \c false.
  */
@@ -942,7 +945,8 @@ bool collision_bsp_test_vector_leaf_visit_surface(
   const bool                        splits_interior,
   
   // NON-VANILLA PARAMETERS
-  bool commit_result)
+  bool commit_result,
+  bool verify_surface)
 {
   if (leaf_index == -1)
       return false;
@@ -957,38 +961,47 @@ bool collision_bsp_test_vector_leaf_visit_surface(
     ctx->origin,
     ctx->delta,
     fraction);
+  
+  if (verify_surface && surface_index != -1)
+  {
+    if (!collision_surface_test3d(ctx->bsp, ctx->breakable_surfaces, surface_index, ctx->origin, ctx->delta))
+      surface_index = -1;
+  }
    
   surface_index = try_resolve_bsp_leak(ctx, leaf_index, fraction, splits_interior, surface_index);
   
-  const bool leak_encountered = !splits_interior && surface_index == -1;
-  switch (get_phantom_bsp_resolution_method(ctx, splits_interior, commit_result, surface_index))
+  if (!verify_surface)
   {
-  case k_resolution_method_reject_current:
-    surface_index = -1;
-    break;
-  
-  case k_resolution_method_make_pending:
-    ctx->ext.has_pending_result = true;
-    ctx->ext.pending.fraction   = fraction;
-    ctx->ext.pending.plane      = plane_index;
-    ctx->ext.pending.surface    = surface_index;
-    surface_index = -1;
-    break;
-  
-  case k_resolution_method_accept_pending:
-    fraction      = ctx->ext.pending.fraction;
-    plane_index   = ctx->ext.pending.plane;
-    surface_index = ctx->ext.pending.surface;
-    ctx->ext.has_pending_result = false;
-    break;
-  
-  case k_resolution_method_reject_pending:
-    ctx->ext.has_pending_result = false;  
-    // PASSTHROUGH OK
-  case k_resolution_method_proceed:
-    break;
+    const bool leak_encountered = !splits_interior && surface_index == -1;
+    switch (get_phantom_bsp_resolution_method(ctx, splits_interior, commit_result, surface_index))
+    {
+    case k_resolution_method_reject_current:
+      surface_index = -1;
+      break;
+    
+    case k_resolution_method_make_pending:
+      ctx->ext.has_pending_result = true;
+      ctx->ext.pending.fraction   = fraction;
+      ctx->ext.pending.plane      = plane_index;
+      ctx->ext.pending.surface    = surface_index;
+      surface_index = -1;
+      break;
+    
+    case k_resolution_method_accept_pending:
+      fraction      = ctx->ext.pending.fraction;
+      plane_index   = ctx->ext.pending.plane;
+      surface_index = ctx->ext.pending.surface;
+      ctx->ext.has_pending_result = false;
+      break;
+    
+    case k_resolution_method_reject_pending:
+      ctx->ext.has_pending_result = false;  
+      // PASSTHROUGH OK
+    case k_resolution_method_proceed:
+      break;
+    }
+    ctx->ext.just_encountered_leak = leak_encountered;
   }
-  ctx->ext.just_encountered_leak = leak_encountered;
   
   return test_vector_context_try_commit_result(ctx, fraction, plane_index, surface_index);
 }
@@ -1025,13 +1038,15 @@ blam_bool collision_bsp_test_vector_leaf(
     const blam_index_long tested_leaf     = ctx->leaf;
     const bool            splits_interior = false;
     const bool            commit_result   = test_frontfacing;
+    const bool            verify_surface  = false;
     
     const bool result = collision_bsp_test_vector_leaf_visit_surface(
       ctx, 
       tested_leaf, 
       fraction, 
       splits_interior, 
-      commit_result);
+      commit_result,
+      verify_surface);
     if (BLAM_LIKELY(result))
       return true;
   } else if ((test_backfacing || mitigate_phantom_bsp)
@@ -1043,13 +1058,15 @@ blam_bool collision_bsp_test_vector_leaf(
     const blam_index_long tested_leaf     = leaf;
     const bool            splits_interior = false;
     const bool            commit_result   = test_backfacing;
+    const bool            verify_surface  = false;
     
     const bool result = collision_bsp_test_vector_leaf_visit_surface(
       ctx, 
       tested_leaf, 
       fraction, 
       splits_interior, 
-      commit_result);
+      commit_result,
+      verify_surface);
     if (BLAM_LIKELY(result))
       return true;
   } else if ((ctx->flags & k_collision_test_ignore_two_sided_surfaces) == 0
@@ -1058,22 +1075,43 @@ blam_bool collision_bsp_test_vector_leaf(
   {
     // Testing double-sided surfaces
     // Plane splits BSP interior leaves at ctx->leaf and leaf.
-    const blam_index_long tested_leaf
-      = (ctx->flags & k_collision_test_front_facing_surfaces) != 0 ? ctx->leaf
-                                                                   : leaf;
-    const bool splits_interior = true;
-    const bool commit_result   = true;
+    const blam_index_long tested_leaf     = test_frontfacing ? ctx->leaf : leaf;
+    const bool            splits_interior = true;
+    const bool            commit_result   = true;
+    const bool            verify_surface  = false;
 
     const bool result = collision_bsp_test_vector_leaf_visit_surface(
       ctx, 
       tested_leaf, 
       fraction, 
       splits_interior, 
-      commit_result);
+      commit_result,
+      verify_surface);
     if (result)
       return true;
     // NOTE: Not a sealed-world violation; double-sided surface may be breakable.
-  } else
+  } else if (mitigate_bsp_leaks &&
+    ((ctx->leaf_type == k_bsp_leaf_type_interior     && leaf_type == k_bsp_leaf_type_double_sided) || 
+     (ctx->leaf_type == k_bsp_leaf_type_double_sided && leaf_type == k_bsp_leaf_type_interior)))
+  {
+    // We've possibly encountered Form 3 BSP leak.
+    // These leaks typically occur between non-double-sided interior leaves and 
+    // double-sided leaves. 
+    const blam_index_long tested_leaf     = test_frontfacing ? ctx->leaf : leaf;
+    const bool            splits_interior = false;
+    const bool            commit_result   = true;
+    const bool            verify_surface  = true;
+    
+    const bool result = collision_bsp_test_vector_leaf_visit_surface(
+      ctx, 
+      tested_leaf, 
+      fraction, 
+      splits_interior, 
+      commit_result,
+      verify_surface);
+    if (result)
+      return true;
+  } else 
   {
     // DO NOTHING
   }
